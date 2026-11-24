@@ -1,15 +1,16 @@
 import { useState } from "react";
-import { RESULT_PLACEHOLDER } from "../analysis/demo";
+import {
+  mockResult,
+  STATUS_DESC,
+  STATUS_LABEL,
+  STATUS_ORDER,
+  STATUS_TONE,
+  type AnalysisResult,
+  type Claim,
+} from "../analysis/mockResult";
+import { NoEvidenceNotice } from "./ErrorState";
 
-const LEGEND = [
-  { label: "근거 확인", tone: "ok" },
-  { label: "근거 부족", tone: "warn" },
-  { label: "확인 불가", tone: "muted" },
-];
-
-const CLAIM_SLOTS = [0, 1, 2];
-
-export function Result() {
+export function Result({ data = mockResult }: { data?: AnalysisResult }) {
   return (
     <section className="analyzing report" aria-labelledby="report-title">
       <p className="analyzing-badge">AI 분석 리포트</p>
@@ -18,36 +19,76 @@ export function Result() {
         광고 속 효능 주장과 확인 가능한 근거자료를 비교한 결과입니다.
       </p>
 
+      <article className="ad-summary">
+        <p className="ad-summary-label">분석한 광고</p>
+        <h2>{data.ad.title}</h2>
+        <dl>
+          <div>
+            <dt>제품</dt>
+            <dd>{data.ad.productName}</dd>
+          </div>
+          <div>
+            <dt>출처</dt>
+            <dd>{data.ad.platform}</dd>
+          </div>
+          <div>
+            <dt>사용 조건</dt>
+            <dd>{data.ad.conditions.join(" · ")}</dd>
+          </div>
+        </dl>
+      </article>
+
       <div className="report-head">
         <h2>효능 주장별 검증 결과</h2>
         <ul className="legend" aria-label="검증 상태">
-          {LEGEND.map((item) => (
-            <li key={item.label} className={`legend-${item.tone}`}>
-              {item.label}
+          {STATUS_ORDER.map((status) => (
+            <li
+              key={status}
+              className={`legend-${STATUS_TONE[status]}`}
+              title={STATUS_DESC[status]}
+            >
+              {STATUS_LABEL[status]}
             </li>
           ))}
         </ul>
       </div>
 
       <ul className="claim-list">
-        {CLAIM_SLOTS.map((slot) => (
-          <ClaimSlot key={slot} />
+        {data.claims.map((claim) => (
+          <ClaimCard key={claim.id} claim={claim} />
         ))}
       </ul>
+
+      <article className="check-card">
+        <h2>구매 전 추가 확인 사항</h2>
+        <ul>
+          {data.checkBeforeBuy.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </article>
+
+      <p className="report-disclaimer">{data.disclaimer}</p>
     </section>
   );
 }
 
-function ClaimSlot() {
+function ClaimCard({ claim }: { claim: Claim }) {
   const [open, setOpen] = useState(false);
+  const tone = STATUS_TONE[claim.status];
 
   return (
     <li className="claim-card">
       <div className="claim-top">
-        <h3>{RESULT_PLACEHOLDER}</h3>
-        <span className="claim-badge">{RESULT_PLACEHOLDER}</span>
+        <h3>{claim.text}</h3>
+        <span className={`claim-badge is-${tone}`}>
+          {STATUS_LABEL[claim.status]}
+        </span>
       </div>
-      <p>{RESULT_PLACEHOLDER}</p>
+      <p>{claim.summary}</p>
+
+      {claim.sources.length === 0 && <NoEvidenceNotice />}
+
       <button
         type="button"
         className="claim-link"
@@ -57,7 +98,27 @@ function ClaimSlot() {
         검증 근거 자세히 보기
         <Arrow open={open} />
       </button>
-      {open && <p className="claim-detail">{RESULT_PLACEHOLDER}</p>}
+
+      {open && (
+        <div className="claim-detail">
+          <p>{claim.detail}</p>
+          {claim.sources.length > 0 && (
+            <ul className="source-list" aria-label="참고 자료 출처">
+              {claim.sources.map((source) => (
+                <li key={source.url}>
+                  <a href={source.url} target="_blank" rel="noreferrer">
+                    {source.title}
+                  </a>
+                  <span>
+                    {source.publisher} · {source.year}
+                    {source.isMock && <em className="mock-tag">가상 출처</em>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </li>
   );
 }
