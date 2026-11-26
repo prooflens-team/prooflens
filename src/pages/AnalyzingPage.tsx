@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ANALYSIS_STEPS, runAnalysisDemo, type AnalysisPhase } from "../analysis/demo";
+import { ANALYSIS_STEPS, type AnalysisPhase } from "../analysis/demo";
 import { isEmptyRequest, type AnalysisNavState } from "../analysis/request";
 import { ERROR_COPY, getScenario, type ErrorCode } from "../analysis/scenario";
+import { AnalysisError, isAbort, runAnalysis, toScreenError } from "../api/analysis";
 import { Analyzing } from "../components/Analyzing";
 import { ErrorState } from "../components/ErrorState";
 
@@ -15,7 +16,6 @@ export function AnalyzingPage() {
   const { search } = location;
   const scenario = getScenario(search);
   // 메인 화면에서 넘어온 입력값 (docs/API.md 1번 형식)
-  // 4번 API 연결 때 이 request를 서버로 보냅니다.
   const request = (location.state as AnalysisNavState | null)?.request;
   // 입력 없이 주소로 바로 들어오면 메인으로 돌려보냄 (?scenario= 테스트는 예외)
   const noInput = !scenario && isEmptyRequest(request);
@@ -39,30 +39,29 @@ export function AnalyzingPage() {
       setError(code);
     };
 
-    const timers = [window.setTimeout(() => fail("TIMEOUT"), TIMEOUT_MS)];
-    if (scenario === "link-blocked") {
-      timers.push(window.setTimeout(() => fail("LINK_ACCESS_DENIED"), 1200));
-    }
+    const timer = window.setTimeout(() => fail("TIMEOUT"), TIMEOUT_MS);
 
-    runAnalysisDemo((next) => {
-      if (settled) return;
-      if (next === "done") {
-        if (scenario === "link-blocked") return fail("LINK_ACCESS_DENIED");
-        if (scenario === "failed") return fail("ANALYSIS_FAILED");
-        if (scenario === "timeout") return fail("TIMEOUT");
+    runAnalysis(request ?? { images: [] }, {
+      signal: controller.signal,
+      scenario,
+      onStep: (next) => {
+        if (!settled) setPhase(next);
+      },
+    })
+      .then((result) => {
+        if (settled) return;
         settled = true;
-        navigate(`/result${search}`, { replace: true });
-        return;
-      }
-      setPhase(next);
-    }, controller.signal).catch((err: unknown) => {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      fail("ANALYSIS_FAILED");
-    });
+        navigate(`/result${search}`, { replace: true, state: { result } });
+      })
+      .catch((err: unknown) => {
+        if (isAbort(err)) return;
+        if (err instanceof AnalysisError) console.warn("[analysis]", err.code, err.message);
+        fail(err instanceof AnalysisError ? toScreenError(err.code) : "ANALYSIS_FAILED");
+      });
 
     return () => {
       controller.abort();
-      timers.forEach((id) => window.clearTimeout(id));
+      window.clearTimeout(timer);
     };
   }, [navigate, scenario, search, attempt, noInput]);
 

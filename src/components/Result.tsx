@@ -1,16 +1,20 @@
 import { useState } from "react";
+import { mockResult, type AnalysisResult, type Claim } from "../analysis/mockResult";
 import {
-  mockResult,
   STATUS_DESC,
   STATUS_LABEL,
   STATUS_ORDER,
   STATUS_TONE,
-  type AnalysisResult,
-  type Claim,
-} from "../analysis/mockResult";
+  toStatus,
+} from "../analysis/status";
 import { NoEvidenceNotice } from "./ErrorState";
 
-export function Result({ data = mockResult }: { data?: AnalysisResult }) {
+type ResultProps = {
+  data?: AnalysisResult;
+  onRestart?: () => void;
+};
+
+export function Result({ data = mockResult, onRestart }: ResultProps) {
   return (
     <section className="analyzing report" aria-labelledby="report-title">
       <p className="analyzing-badge">AI 분석 리포트</p>
@@ -33,7 +37,11 @@ export function Result({ data = mockResult }: { data?: AnalysisResult }) {
           </div>
           <div>
             <dt>사용 조건</dt>
-            <dd>{data.ad.conditions.join(" · ")}</dd>
+            <dd>{data.ad.conditions.length ? data.ad.conditions.join(" · ") : "정보 없음"}</dd>
+          </div>
+          <div>
+            <dt>분석 일시</dt>
+            <dd>{data.ad.analyzedAt}</dd>
           </div>
         </dl>
       </article>
@@ -69,20 +77,29 @@ export function Result({ data = mockResult }: { data?: AnalysisResult }) {
       </article>
 
       <p className="report-disclaimer">{data.disclaimer}</p>
+
+      {onRestart && (
+        <div className="report-actions">
+          <button type="button" className="primary" onClick={onRestart}>
+            다른 광고 분석하기
+          </button>
+        </div>
+      )}
     </section>
   );
 }
 
 function ClaimCard({ claim }: { claim: Claim }) {
   const [open, setOpen] = useState(false);
-  const tone = STATUS_TONE[claim.status];
+  const status = toStatus(claim.status);
+  const tone = STATUS_TONE[status];
 
   return (
     <li className="claim-card">
       <div className="claim-top">
         <h3>{claim.text}</h3>
         <span className={`claim-badge is-${tone}`}>
-          {STATUS_LABEL[claim.status]}
+          {STATUS_LABEL[status]}
         </span>
       </div>
       <p>{claim.summary}</p>
@@ -95,7 +112,7 @@ function ClaimCard({ claim }: { claim: Claim }) {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        검증 근거 자세히 보기
+        {open ? "검증 근거 접기" : "검증 근거 자세히 보기"}
         <Arrow open={open} />
       </button>
 
@@ -104,8 +121,8 @@ function ClaimCard({ claim }: { claim: Claim }) {
           <p>{claim.detail}</p>
           {claim.sources.length > 0 && (
             <ul className="source-list" aria-label="참고 자료 출처">
-              {claim.sources.map((source) => (
-                <li key={source.url}>
+              {claim.sources.map((source, index) => (
+                <li key={`${source.url}-${index}`}>
                   <a href={source.url} target="_blank" rel="noreferrer">
                     {source.title}
                   </a>

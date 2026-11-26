@@ -1,25 +1,4 @@
-const STATUSES = [
-  {
-    label: "근거 확인",
-    tone: "ok",
-    text: "해당 주장을 뒷받침하는 자료가 확인됨",
-  },
-  {
-    label: "근거와 불일치",
-    tone: "bad",
-    text: "확인된 자료와 광고 주장이 충돌함",
-  },
-  {
-    label: "근거 부족",
-    tone: "warn",
-    text: "자료만으로 해당 효과를 뒷받침하기 어려움",
-  },
-  {
-    label: "확인 불가",
-    tone: "muted",
-    text: "관련 정보를 충분히 확보하지 못함",
-  },
-];
+import { STATUS_DESC, STATUS_LABEL, STATUS_ORDER, STATUS_TONE } from "../analysis/status";
 
 const STEPS = [
   {
@@ -70,10 +49,10 @@ export function InfoSections() {
           어렵습니다. PROOFLENS는 이 확인 과정을 생성형 AI로 돕습니다.
         </p>
         <ul className="status-list">
-          {STATUSES.map((item) => (
-            <li key={item.label}>
-              <span className={`pill pill-${item.tone}`}>{item.label}</span>
-              <p>{item.text}</p>
+          {STATUS_ORDER.map((status) => (
+            <li key={status}>
+              <span className={`pill pill-${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>
+              <p>{STATUS_DESC[status]}</p>
             </li>
           ))}
         </ul>

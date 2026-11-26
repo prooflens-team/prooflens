@@ -1206,3 +1206,19 @@ a {
     padding: 18px 16px;
   }
 }
+
+/* 결과 화면 하단 버튼 */
+.report-actions {
+  width: min(820px, 100%);
+  margin-top: 8px;
+}
+
+/* 긴 문구·URL 줄바꿈 */
+.claim-card h3,
+.claim-card p,
+.ad-summary h2,
+.ad-summary dd,
+.check-card li,
+.source-list a {
+  overflow-wrap: anywhere;
+}
