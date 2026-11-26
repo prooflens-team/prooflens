@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { buildRequest, MAX_IMAGES, type AnalysisRequest } from "../analysis/request";
 
 type Shot = {
   id: string;
   name: string;
   url: string;
+  file: File;
 };
 
 function isHttpUrl(value: string) {
@@ -16,7 +18,7 @@ function isHttpUrl(value: string) {
 }
 
 type HomeProps = {
-  onStart: () => void;
+  onStart: (request: AnalysisRequest) => void;
 };
 
 export function Home({ onStart }: HomeProps) {
@@ -47,9 +49,15 @@ export function Home({ onStart }: HomeProps) {
         id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
         url: URL.createObjectURL(file),
+        file,
       }));
     if (!next.length) {
       setMessage("이미지 파일만 추가할 수 있습니다.");
+      return;
+    }
+    if (shots.length + next.length > MAX_IMAGES) {
+      next.forEach((shot) => URL.revokeObjectURL(shot.url));
+      setMessage(`스크린샷은 최대 ${MAX_IMAGES}장까지 추가할 수 있습니다.`);
       return;
     }
     setShots((current) => [...current, ...next]);
@@ -80,7 +88,13 @@ export function Home({ onStart }: HomeProps) {
     }
 
     setMessage(null);
-    onStart();
+    onStart(
+      buildRequest({
+        url: trimmedUrl,
+        copy: trimmedCopy,
+        images: shots.map((shot) => shot.file),
+      }),
+    );
   }
 
   return (

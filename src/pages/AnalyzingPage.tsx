@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ANALYSIS_STEPS, runAnalysisDemo, type AnalysisPhase } from "../analysis/demo";
+import { isEmptyRequest, type AnalysisNavState } from "../analysis/request";
 import { ERROR_COPY, getScenario, type ErrorCode } from "../analysis/scenario";
 import { Analyzing } from "../components/Analyzing";
 import { ErrorState } from "../components/ErrorState";
@@ -10,13 +11,24 @@ const TIMEOUT_MS = 60_000;
 
 export function AnalyzingPage() {
   const navigate = useNavigate();
-  const { search } = useLocation();
+  const location = useLocation();
+  const { search } = location;
   const scenario = getScenario(search);
+  // 메인 화면에서 넘어온 입력값 (docs/API.md 1번 형식)
+  // 4번 API 연결 때 이 request를 서버로 보냅니다.
+  const request = (location.state as AnalysisNavState | null)?.request;
+  // 입력 없이 주소로 바로 들어오면 메인으로 돌려보냄 (?scenario= 테스트는 예외)
+  const noInput = !scenario && isEmptyRequest(request);
   const [phase, setPhase] = useState<AnalysisPhase>(ANALYSIS_STEPS[0].id);
   const [error, setError] = useState<ErrorCode | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    if (noInput) {
+      navigate({ pathname: "/", hash: "#analyze" }, { replace: true });
+      return;
+    }
+
     const controller = new AbortController();
     let settled = false;
 
@@ -52,7 +64,9 @@ export function AnalyzingPage() {
       controller.abort();
       timers.forEach((id) => window.clearTimeout(id));
     };
-  }, [navigate, scenario, search, attempt]);
+  }, [navigate, scenario, search, attempt, noInput]);
+
+  if (noInput) return null;
 
   if (error) {
     const copy = ERROR_COPY[error];
