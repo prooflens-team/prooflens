@@ -31,6 +31,6 @@ export const ERROR_COPY: Record<ErrorCode, { title: string; text: string }> = {
   },
   TIMEOUT: {
     title: "분석이 너무 오래 걸리고 있어요",
-    text: "요청이 많거나 광고 내용이 길어 시간이 초과됐어요. 다시 시도하거나 스크린샷·문구로 입력해 보세요.",
+    text: "요청이 많거나 광고 내용이 길면 분석이 늦어질 수 있어요. 다시 시도하거나 스크린샷·문구로 입력해 보세요.",
   },
 };

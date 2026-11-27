@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { USE_MOCK } from "./api/analysis";
 import { Header, scrollToHash } from "./components/Header";
 import { AnalyzingPage } from "./pages/AnalyzingPage";
 import { HomePage } from "./pages/HomePage";
@@ -44,8 +45,8 @@ function SiteFooter() {
 
   return (
     <footer className="footer">
-      {onFlow
-        ? "PROOFLENS · 생성형 AI 기반 SNS 광고 근거 분석 · UI 디자인 시안"
+      {onFlow && USE_MOCK
+        ? "PROOFLENS · 생성형 AI 기반 SNS 광고 근거 분석 · 시연용 가상 데이터"
         : "PROOFLENS · 생성형 AI 기반 SNS 광고 근거 분석"}
     </footer>
   );
