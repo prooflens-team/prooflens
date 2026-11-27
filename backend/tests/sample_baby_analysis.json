@@ -1,0 +1,74 @@
+{
+    "ad": {
+        "title": "영유아용 화장품 피부 안전성 광고",
+        "platform": "직접 입력",
+        "copy": "민감한 우리 아이 피부 확실한 검증으로 더욱 더 안심. 자극도 0.00. 민감성 피부 대상 피부 저자극 테스트 완료. 우리 아이 또래가 직접 사용하고 피부과, 소아과 전문의가 안전성을 확인했어요. 영유아 피부 안전성 테스트 완료.",
+        "brandName": null,
+        "productName": null,
+        "category": "영유아용 화장품",
+        "targetAudience": "영유아",
+        "ingredients": [],
+        "conditions": [
+            "민감성 피부 대상 피부 저자극 시험",
+            "건강한 3~36개월 영유아 대상 피부 안전성 시험"
+        ],
+        "analyzedAt": "2026-11-28 01:00",
+        "testConditions": [
+            {
+                "id": "test1",
+                "sourceId": "image1",
+                "testType": "피부 저자극 시험",
+                "institution": "Intertek",
+                "participants": "성인 남녀",
+                "sampleSize": 31,
+                "startDate": "2025-03-18",
+                "endDate": "2023-03-20",
+                "duration": null,
+                "result": "피부 자극도 0.00"
+            },
+            {
+                "id": "test2",
+                "sourceId": "image2",
+                "testType": "영유아 피부 안전성 시험",
+                "institution": "엘리드",
+                "participants": "건강한 3~36개월 영유아 남녀",
+                "sampleSize": 24,
+                "startDate": "2025-08-27",
+                "endDate": "2025-09-10",
+                "duration": "2주",
+                "result": null
+            }
+        ]
+    },
+    "claims": [
+        {
+            "id": "c1",
+            "text": "민감성 피부 대상 피부 저자극 테스트를 완료했으며 피부 자극도는 0.00이다.",
+            "claimType": "IRRITATION",
+            "sourceIds": [
+                "image1"
+            ],
+            "testIds": [
+                "test1"
+            ],
+            "conditions": [
+                "성인 남녀 31명 대상"
+            ]
+        },
+        {
+            "id": "c2",
+            "text": "영유아 피부 안전성 테스트를 완료했으며 피부과 및 소아과 전문의가 안전성을 확인했다.",
+            "claimType": "SAFETY",
+            "sourceIds": [
+                "image2"
+            ],
+            "testIds": [
+                "test2"
+            ],
+            "conditions": [
+                "건강한 3~36개월 영유아 24명 대상",
+                "2주간 시험"
+            ]
+        }
+    ]
+}
