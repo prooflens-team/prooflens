@@ -99,9 +99,11 @@ export function Home({ onStart }: HomeProps) {
 
   return (
     <section className="home" id="top">
-      <div className="blob blob-left" aria-hidden="true" />
-      <div className="blob blob-right" aria-hidden="true" />
-      <div className="blob blob-corner" aria-hidden="true" />
+      <div className="home-bg" aria-hidden="true">
+        <div className="blob blob-left" />
+        <div className="blob blob-right" />
+        <div className="blob blob-corner" />
+      </div>
 
       <div className="hero">
         <img className="hero-logo" src="/logo.png" alt="PROOFLENS" />

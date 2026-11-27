@@ -162,11 +162,18 @@ a {
 .home {
   position: relative;
   min-height: calc(100vh - var(--header));
+  min-height: calc(100svh - var(--header));
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 36px 24px 56px;
+  padding: 28px 24px 48px;
+}
+
+.home-bg {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
+  pointer-events: none;
 }
 
 .blob {
@@ -203,6 +210,7 @@ a {
 .hero {
   position: relative;
   width: min(760px, 100%);
+  margin-block: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
