@@ -8,6 +8,21 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types, errors
 
+if __package__:
+    from .ad_context import (
+        build_search_query,
+        build_review_queries,
+        get_test_conditions,
+        review_ad_context
+    )
+else:
+    from ad_context import (
+        build_search_query,
+        build_review_queries,
+        get_test_conditions,
+        review_ad_context
+    )
+
 
 if __package__:
     from .retriever import search_evidence
@@ -91,90 +106,212 @@ def generate_with_retry(input_data, max_attempts=2):
             )
 
             time.sleep(wait_seconds)
+def search_contextual_evidence(claim_text, ad=None, claim=None):
+    """광고 주장과 시험 조건을 고려하여 근거자료를 검색합니다."""
 
+    ad = ad or {}
+    claim = claim or {}
 
-def unverifiable_result(claim_id, claim_text):
-    return VerifiedClaim(
-        id=claim_id,
-        text=claim_text,
-        status="UNVERIFIABLE",
-        summary="관련 근거자료를 찾지 못했습니다.",
-        detail=(
-            "현재 PROOFLENS 데이터베이스에서 "
-            "해당 광고 주장을 검증할 수 있는 "
-            "관련 근거자료를 찾지 못했습니다. "
-            "이는 광고 주장이 허위라는 의미는 아닙니다."
-        ),
-        sources=[]
-    ).model_dump()
-
-
-def verify_claim(claim_id, claim_text, ad=None):
-
-    if not isinstance(claim_text, str) or not claim_text.strip():
-        raise ValueError("광고 주장이 비어 있습니다.")
-
-    # 1. 관련 근거자료 검색
-    start = time.perf_counter()
-
-    print("[1/3] 근거자료 검색 중...", file=sys.stderr, flush=True)
-
-    evidence = search_evidence(
+    # 1. 광고 주장 중심 검색
+    primary_results = search_evidence(
         claim_text,
         top_k=3,
         min_similarity=0.65
     )
 
+    # 2. 광고 맥락을 포함한 검색
+    context_query = build_search_query(
+        claim_text,
+        ad,
+        claim
+    )
+
+    context_results = []
+
+    if context_query.strip() != claim_text.strip():
+
+        context_results = search_evidence(
+            context_query,
+            top_k=3,
+            min_similarity=0.65
+        )
+
+    # 3. 시험 조건의 한계를 검토하기 위한 보조 검색
+    review_results = []
+
+    review_queries = build_review_queries(ad, claim)
+
+    for query in review_queries:
+
+        results = search_evidence(
+            query,
+            top_k=2,
+            min_similarity=0.65
+        )
+
+        review_results.extend(results)
+
+    # 4. 검색 결과 병합 및 중복 제거
+    merged = []
+    seen_ids = set()
+
+    # 광고 주장 중심 검색 결과를 우선 보존합니다.
+    for group in (
+        primary_results,
+        context_results,
+        review_results
+    ):
+
+        for item in group:
+
+            if item["id"] in seen_ids:
+                continue
+
+            seen_ids.add(item["id"])
+            merged.append(item)
+
+    return merged
+
+
+
+def unverifiable_result(
+    claim_id,
+    claim_text,
+    findings=None
+):
+
+    detail = (
+        "현재 PROOFLENS 데이터베이스에서 "
+        "해당 광고 주장을 검증할 수 있는 "
+        "관련 근거자료를 찾지 못했습니다. "
+        "이는 광고 주장이 허위라는 의미는 아닙니다."
+    )
+
+    if findings:
+
+        detail += (
+            "\n\n[광고 자체 정보 검토]\n"
+            + "\n".join(findings)
+        )
+
+    return VerifiedClaim(
+        id=claim_id,
+        text=claim_text,
+        status="UNVERIFIABLE",
+        summary="관련 외부 근거자료를 찾지 못했습니다.",
+        detail=detail,
+        sources=[]
+    ).model_dump()
+
+
+
+def verify_claim(
+    claim_id,
+    claim_text,
+    ad=None,
+    claim=None
+):
+
+    if not isinstance(claim_text, str) or not claim_text.strip():
+        raise ValueError("광고 주장이 비어 있습니다.")
+
+    ad = ad or {}
+    claim = claim or {}
+
+    total_start = time.perf_counter()
+
+    # 1. 광고 자체 정보 검토
+    findings = review_ad_context(ad, claim)
+
+    # 2. 광고 맥락 기반 근거자료 검색
+    search_start = time.perf_counter()
+
     print(
-        f"[2/3] 근거자료 {len(evidence)}개 검색 완료 "
-        f"({time.perf_counter() - start:.2f}초)",
+        "[1/3] 광고 맥락 기반 근거자료 검색 중...",
         file=sys.stderr,
         flush=True
     )
 
-    # 2. 검색 결과가 없으면 확인 불가 처리
+    evidence = search_contextual_evidence(
+        claim_text,
+        ad,
+        claim
+    )
+
+    search_elapsed = time.perf_counter() - search_start
+
+    print(
+        f"[2/3] 근거자료 {len(evidence)}개 검색 완료 "
+        f"({search_elapsed:.2f}초)",
+        file=sys.stderr,
+        flush=True
+    )
+
+    # 3. 외부 근거가 없는 경우
     if not evidence:
-        return unverifiable_result(
+
+        result = unverifiable_result(
             claim_id,
-            claim_text
+            claim_text,
+            findings
         )
 
-    # 3. Gemini에 전달할 입력 데이터 구성
-    ad = ad or {}
+        print(
+            f"[TIME] 전체 검증 시간: "
+            f"{time.perf_counter() - total_start:.2f}초",
+            file=sys.stderr,
+            flush=True
+        )
 
+        return result
+
+    # 4. Gemini 입력 데이터 구성
     input_data = {
         "ad": {
-            "productName": ad.get("productName", ""),
-            "category": ad.get("category", "")
+            "brandName": ad.get("brandName"),
+            "productName": ad.get("productName"),
+            "category": ad.get("category"),
+            "targetAudience": ad.get("targetAudience"),
+            "ingredients": ad.get("ingredients", []),
+            "conditions": claim.get("conditions", []),
+            "testConditions": get_test_conditions(
+                ad,
+                claim
+            )
         },
         "claim": claim_text,
+        "claimType": claim.get("claimType"),
+        "adReview": findings,
         "evidence": evidence
     }
 
-    # 4. Gemini를 활용한 광고 주장 검증
+    # 5. Gemini 광고 검증
     print(
         "[3/3] Gemini 광고 검증 중...",
         file=sys.stderr,
         flush=True
     )
+
+    gemini_start = time.perf_counter()
+
     response = generate_with_retry(input_data)
 
+    gemini_elapsed = time.perf_counter() - gemini_start
+
     print(
-    f"Gemini 응답 완료 ({time.perf_counter() - start:.2f}초)",
-    file=sys.stderr,
-    flush=True
-)
+        f"[TIME] Gemini 응답 시간: {gemini_elapsed:.2f}초",
+        file=sys.stderr,
+        flush=True
+    )
 
     if not response.text:
         raise RuntimeError("Gemini 검증 결과가 없습니다.")
 
-    verification = (
-        VerificationResponse.model_validate_json(
-            response.text
-        )
+    verification = VerificationResponse.model_validate_json(
+        response.text
     )
 
-    # 5. 실제 검색된 근거자료 ID 검증
+    # 6. 실제 검색된 근거자료 ID 검증
     evidence_map = {
         item["id"]: item
         for item in evidence
@@ -187,20 +324,21 @@ def verify_claim(claim_id, claim_text, ad=None):
     ]
 
     if invalid_ids:
+
         raise RuntimeError(
             "AI가 존재하지 않는 근거자료 ID를 반환했습니다."
         )
 
-    # 근거 확인 및 불일치 판정에는 출처가 필요함
     if (
         verification.status in ["SUPPORTED", "CONFLICT"]
         and not verification.evidenceIds
     ):
+
         raise RuntimeError(
             "검증 판정에 필요한 근거자료가 없습니다."
         )
 
-    # 6. 실제 DB 자료에서 출처 정보 구성
+    # 7. 실제 DB 자료에서 출처 정보 구성
     sources = []
     seen_urls = set()
 
@@ -222,17 +360,35 @@ def verify_claim(claim_id, claim_text, ad=None):
             )
         )
 
-    # 7. 최종 검증 결과 반환
+    # 8. 외부 근거 검증과 광고 자체 검토 결과 결합
+    detail = verification.detail
+
+    if findings:
+
+        detail += (
+            "\n\n[광고 자체 정보 검토]\n"
+            + "\n".join(findings)
+        )
+
     result = VerifiedClaim(
         id=claim_id,
         text=claim_text,
         status=verification.status,
         summary=verification.summary,
-        detail=verification.detail,
+        detail=detail,
         sources=sources
+    ).model_dump()
+
+    # 9. 전체 검증 시간 측정
+    print(
+        f"[TIME] 전체 검증 시간: "
+        f"{time.perf_counter() - total_start:.2f}초",
+        file=sys.stderr,
+        flush=True
     )
 
-    return result.model_dump()
+    return result
+
 
 
 if __name__ == "__main__":
