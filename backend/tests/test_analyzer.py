@@ -134,7 +134,7 @@ def test_api_429():
             analyze_ad(copy="테스트 광고")
 
 
-# 테스트 10: API 서버 혼잡
+# 테스트 10: API 서버 혼잡. 한 번 재시도한 뒤에도 503이면 실패합니다.
 def test_api_503():
 
     with patch(
@@ -143,7 +143,85 @@ def test_api_503():
             503,
             {"error": {"message": "Service unavailable"}}
         )
-    ):
+    ) as mock_generate, patch(
+        "ai.ad_analyzer.time.sleep"
+    ) as mock_sleep:
 
         with pytest.raises(RuntimeError, match="혼잡"):
             analyze_ad(copy="테스트 광고")
+
+        assert mock_generate.call_count == 2
+        mock_sleep.assert_called_once_with(2)
+
+
+# 테스트 11: 503 한 번 후 재시도 성공
+def test_retry_after_503():
+
+    with patch(
+        "ai.ad_analyzer.client.models.generate_content",
+        side_effect=[
+            errors.ServerError(
+                503,
+                {"error": {"message": "Service unavailable"}}
+            ),
+            make_response()
+        ]
+    ) as mock_generate, patch(
+        "ai.ad_analyzer.time.sleep"
+    ) as mock_sleep:
+
+        result = analyze_ad(copy="4주 사용 시 피부 보습력 30% 개선!")
+
+        assert result["claims"][0]["id"] == "c1"
+        assert mock_generate.call_count == 2
+        mock_sleep.assert_called_once_with(2)
+
+
+# 테스트 12: 500, 502, 504도 한 번만 재시도
+@pytest.mark.parametrize("code", [500, 502, 504])
+def test_retryable_server_errors(code):
+
+    with patch(
+        "ai.ad_analyzer.client.models.generate_content",
+        side_effect=[
+            errors.ServerError(
+                code,
+                {"error": {"message": "Temporary server error"}}
+            ),
+            make_response()
+        ]
+    ) as mock_generate, patch(
+        "ai.ad_analyzer.time.sleep"
+    ) as mock_sleep:
+
+        result = analyze_ad(copy="테스트 광고")
+
+        assert result["ad"]["copy"] == "테스트 광고"
+        assert mock_generate.call_count == 2
+        mock_sleep.assert_called_once_with(2)
+
+
+# 테스트 13: 인증, 잘못된 요청, 요청 한도는 재시도하지 않음
+@pytest.mark.parametrize("code,message", [
+    (400, "요청 형식"),
+    (401, "인증"),
+    (403, "인증"),
+    (429, "요청 한도"),
+])
+def test_client_errors_are_not_retried(code, message):
+
+    with patch(
+        "ai.ad_analyzer.client.models.generate_content",
+        side_effect=errors.ClientError(
+            code,
+            {"error": {"message": "Client error"}}
+        )
+    ) as mock_generate, patch(
+        "ai.ad_analyzer.time.sleep"
+    ) as mock_sleep:
+
+        with pytest.raises(RuntimeError, match=message):
+            analyze_ad(copy="테스트 광고")
+
+        assert mock_generate.call_count == 1
+        mock_sleep.assert_not_called()

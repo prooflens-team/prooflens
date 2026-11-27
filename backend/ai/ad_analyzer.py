@@ -1,5 +1,7 @@
 import os
 import json
+import sys
+import time
 import mimetypes
 from pathlib import Path
 from datetime import datetime
@@ -22,10 +24,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # 환경변수 불러오기
 load_dotenv(BASE_DIR / ".env")
 
-# Gemini 클라이언트 생성
+# Gemini 클라이언트 생성. SDK 자체 재시도는 끄고, 아래 함수에서 한 번만 재시도합니다.
 client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY")
+    api_key=os.getenv("GEMINI_API_KEY"),
+    http_options=types.HttpOptions(
+        timeout=20000,
+        retry_options=types.HttpRetryOptions(
+            attempts=1
+        )
+    )
 )
+
+RETRYABLE_CODES = {500, 502, 503, 504}
 
 MODEL = os.getenv("GEMINI_MODEL")
 
@@ -33,6 +43,40 @@ MODEL = os.getenv("GEMINI_MODEL")
 PROMPT = (BASE_DIR / "prompts" / "analysis.txt").read_text(
     encoding="utf-8"
 )
+
+
+def generate_with_retry(contents, max_attempts=2):
+
+    for attempt in range(1, max_attempts + 1):
+
+        try:
+            return client.models.generate_content(
+                model=MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=PROMPT,
+                    response_mime_type="application/json",
+                    response_schema=AnalysisResponse,
+                    temperature=0.1
+                )
+            )
+
+        except errors.APIError as e:
+
+            if e.code not in RETRYABLE_CODES or attempt >= max_attempts:
+                raise
+
+            wait_seconds = 2 ** attempt
+
+            print(
+                f"[RETRY] Gemini API 오류 {e.code} "
+                f"({attempt}/{max_attempts}) - "
+                f"{wait_seconds}초 후 재시도",
+                file=sys.stderr,
+                flush=True
+            )
+
+            time.sleep(wait_seconds)
 
 
 # 광고 분석 함수
@@ -83,16 +127,7 @@ def analyze_ad(copy="", image_paths=None):
 
        # Gemini API 호출 및 예외 처리
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=PROMPT,
-                response_mime_type="application/json",
-                response_schema=AnalysisResponse,
-                temperature=0.1
-            )
-        )
+        response = generate_with_retry(contents)
 
     except errors.APIError as e:
 
