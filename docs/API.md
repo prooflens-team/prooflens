@@ -107,7 +107,7 @@ url: https://www.youtube.com/shorts/VIDEO_ID
 
 `GET /api/analyses/{analysisId}`
 
-프론트는 **2초마다** 이 주소를 조회합니다. 지금은 화면이 60초 안에 끝나지 않으면 시간 초과로 처리합니다. 서버 제한이 길어졌으므로 아래 6절의 권장 시간으로 바꾸는 것이 필요합니다.
+프론트는 **2초마다** 이 주소를 조회합니다. 180초 안에 `completed`나 `failed`가 오지 않으면 프론트에서 시간 초과(`TIMEOUT`) 화면을 띄웁니다. 서버 제한이 길어졌으므로 아래 6절의 권장 시간(문구·이미지 195초, 영상 270초)으로 바꾸는 것이 필요합니다.
 
 ### 응답 공통 형식 `200 OK`
 
@@ -406,11 +406,11 @@ RAG 근거 검증과 별도로, 광고 문장 안의 시험기간만 규칙으�
 | `YOUTUBE_ACCESS_FAILED` | 공개 YouTube 영상에 접근하지 못함 | ② 조회 응답 `error` | 공개 여부와 URL 확인, 또는 MP4 업로드 안내 |
 | `ANALYSIS_FAILED` | 인증·사용량·서버 오류 등 그 밖의 분석 실패 | ② 조회 응답 `error` | "분석 중 문제가 생겼어요" |
 | `NOT_FOUND` | 없는 analysisId 조회 (404) | ② 조회 응답 | "분석 중 문제가 생겼어요" |
-| `TIMEOUT` | 실행 제한 또는 대기 제한에 도달 | ② 조회 응답 `error`, 또는 프론트 타이머 | "분석이 너무 오래 걸리고 있어요" |
+| `TIMEOUT` | 서버의 실행·대기 제한, 또는 프론트의 180초 타이머 | ② 조회 응답 `error`, 또는 프론트 타이머 | "분석이 너무 오래 걸리고 있어요" |
 | `RATE_LIMIT_EXCEEDED` | IP·전체 요청 한도 또는 같은 IP의 동시 분석 한도 초과 | ① 또는 조회 응답 (429) | 아직 일반 실패 화면. `Retry-After`를 보고 다시 시도 |
 | `QUEUE_FULL` | 서버 대기열이 가득 참 | ① 요청 응답 (503) | 아직 일반 실패 화면. 잠시 후 다시 시도 |
 
-YouTube 접근 실패만 `YOUTUBE_ACCESS_FAILED`입니다. Gemini 인증 오류, 사용량 초과, 일시적인 서버 오류는 `ANALYSIS_FAILED`입니다. 분석이 실행 시간이나 대기 시간을 넘기면 `TIMEOUT`입니다. 429 응답에는 `Retry-After` 헤더와 `error.retryAfter`(초)가 있습니다. 기존 오류 본문 `{ error: { code, message } }`는 그대로입니다.
+YouTube 접근 실패만 `YOUTUBE_ACCESS_FAILED`입니다. Gemini 인증 오류, 사용량 초과, 일시적인 서버 오류는 `ANALYSIS_FAILED`입니다. 분석이 실행 시간이나 대기 시간을 넘기면 `TIMEOUT`입니다. 프론트는 이와 별도로 180초가 지나면 시간 초과 화면을 띄웁니다. 429 응답에는 `Retry-After` 헤더와 `error.retryAfter`(초)가 있습니다. 기존 오류 본문 `{ error: { code, message } }`는 그대로입니다.
 
 - 오류가 아닌 경우
   - 주장을 하나도 못 찾음 → `completed` + `claims: []` → "확인할 효능 주장을 찾지 못했어요"
@@ -422,7 +422,7 @@ YouTube 접근 실패만 `YOUTUBE_ACCESS_FAILED`입니다. Gemini 인증 오류,
 
 1. 개발 서버 주소와 포트
 2. CORS에 `http://localhost:5173` 허용
-3. 분석 1건에 걸리는 예상 시간 (60초 넘으면 시간 초과 기준 조정)
+3. 분석 1건에 걸리는 예상 시간 (프론트는 180초까지 대기)
 4. 이 형식에서 바꾸고 싶은 필드가 있는지
 
 ### 프론트엔드에서 이어서 만들 기능
@@ -435,7 +435,7 @@ YouTube 접근 실패만 `YOUTUBE_ACCESS_FAILED`입니다. Gemini 인증 오류,
 4. Instagram과 TikTok 주소는 영상 분석 버튼으로 연결하지 않습니다.
 5. `UNSUPPORTED_VIDEO_URL`, `INVALID_VIDEO_FILE`, `VIDEO_TOO_LARGE`, `INVALID_INPUT_COMBINATION`, `YOUTUBE_ACCESS_FAILED` 문구를 화면에 연결합니다.
 6. 주장의 `timestamps`를 재생 위치로 보여 줍니다. `sources`와 섞지 않습니다.
-7. 화면의 60초 제한을 6절의 권장 시간으로 바꿉니다. 조회 간격 2초는 유지합니다.
+7. 화면의 180초 제한을 6절의 권장 시간으로 바꿉니다. 조회 간격 2초는 유지합니다.
 8. `RATE_LIMIT_EXCEEDED`와 `QUEUE_FULL`을 일반 실패와 구분하고, 429의 `Retry-After` 뒤에 다시 요청합니다.
 9. 서버가 `failed`와 `TIMEOUT`을 주면 화면 타이머보다 먼저 그 결과를 사용합니다.
 
@@ -466,7 +466,7 @@ YouTube 접근 실패만 `YOUTUBE_ACCESS_FAILED`입니다. Gemini 인증 오류,
 - 문구·이미지·일반 링크: 195초. 업로드 여유 15초, 대기 최대 60초, 실행 120초입니다.
 - YouTube·MP4: 270초. 업로드 여유 30초, 대기 최대 60초, 실행 180초입니다.
 
-135초와 195초는 실행 시간에 15초만 더한 값이라, 대기열에 있는 동안 화면이 먼저 끊기고 서버는 Gemini 호출을 계속할 수 있습니다. 그래서 195초와 270초를 권장합니다. 화면 코드는 아직 60초입니다.
+135초와 195초는 실행 시간에 15초만 더한 값이라, 대기열에 있는 동안 화면이 먼저 끊기고 서버는 Gemini 호출을 계속할 수 있습니다. 그래서 195초와 270초를 권장합니다. 화면 코드는 현재 180초입니다.
 
 ### 요청 제한
 
