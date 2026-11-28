@@ -2,8 +2,8 @@ import pytest
 
 from unittest.mock import patch, MagicMock
 from google.genai import errors
-
-from rag.verifier import generate_with_retry
+from ai.ad_analyzer import generate_with_retry as analyze_with_retry
+from rag.verifier import generate_with_retry as verify_with_retry
 
 
 def make_api_error(code):
@@ -19,8 +19,78 @@ def make_api_error(code):
     )
 
 
-# 1. 최초 요청 성공
-def test_success_without_retry():
+def test_analysis_success_without_retry():
+
+    response = MagicMock()
+
+    with patch(
+        "ai.ad_analyzer.client.models.generate_content",
+        return_value=response
+    ) as mock_generate, patch(
+        "ai.ad_analyzer.time.sleep"
+    ) as mock_sleep:
+
+        result = analyze_with_retry(["테스트 광고"])
+
+        assert result is response
+        assert mock_generate.call_count == 1
+        mock_sleep.assert_not_called()
+
+
+@pytest.mark.parametrize("code", [500, 502, 503, 504])
+def test_analysis_retry_success(code):
+
+    response = MagicMock()
+
+    with patch(
+        "ai.ad_analyzer.client.models.generate_content",
+        side_effect=[make_api_error(code), response]
+    ) as mock_generate, patch(
+        "ai.ad_analyzer.time.sleep"
+    ) as mock_sleep:
+
+        result = analyze_with_retry(["테스트 광고"])
+
+        assert result is response
+        assert mock_generate.call_count == 2
+        mock_sleep.assert_called_once_with(2)
+
+
+@pytest.mark.parametrize("code", [500, 502, 503, 504])
+def test_analysis_retry_failure(code):
+
+    with patch(
+        "ai.ad_analyzer.client.models.generate_content",
+        side_effect=make_api_error(code)
+    ) as mock_generate, patch(
+        "ai.ad_analyzer.time.sleep"
+    ) as mock_sleep:
+
+        with pytest.raises(errors.APIError):
+            analyze_with_retry(["테스트 광고"])
+
+        assert mock_generate.call_count == 2
+        mock_sleep.assert_called_once_with(2)
+
+
+@pytest.mark.parametrize("code", [400, 401, 403, 429])
+def test_analysis_non_retryable_error(code):
+
+    with patch(
+        "ai.ad_analyzer.client.models.generate_content",
+        side_effect=make_api_error(code)
+    ) as mock_generate, patch(
+        "ai.ad_analyzer.time.sleep"
+    ) as mock_sleep:
+
+        with pytest.raises(errors.APIError):
+            analyze_with_retry(["테스트 광고"])
+
+        assert mock_generate.call_count == 1
+        mock_sleep.assert_not_called()
+
+
+def test_verification_success_without_retry():
 
     response = MagicMock()
 
@@ -31,15 +101,14 @@ def test_success_without_retry():
         "rag.verifier.time.sleep"
     ) as mock_sleep:
 
-        result = generate_with_retry({"claim": "test"})
+        result = verify_with_retry({"claim": "test"})
 
         assert result is response
         assert mock_generate.call_count == 1
         mock_sleep.assert_not_called()
 
 
-# 2. 503 오류 발생 후 재시도 성공
-def test_retry_after_503():
+def test_verification_retry_after_503():
 
     response = MagicMock()
 
@@ -50,15 +119,14 @@ def test_retry_after_503():
         "rag.verifier.time.sleep"
     ) as mock_sleep:
 
-        result = generate_with_retry({"claim": "test"})
+        result = verify_with_retry({"claim": "test"})
 
         assert result is response
         assert mock_generate.call_count == 2
         mock_sleep.assert_called_once_with(2)
 
 
-# 3. 재시도까지 실패
-def test_retry_exhausted():
+def test_verification_retry_exhausted():
 
     with patch(
         "rag.verifier.client.models.generate_content",
@@ -71,15 +139,14 @@ def test_retry_exhausted():
     ) as mock_sleep:
 
         with pytest.raises(RuntimeError):
-            generate_with_retry({"claim": "test"})
+            verify_with_retry({"claim": "test"})
 
         assert mock_generate.call_count == 2
         mock_sleep.assert_called_once_with(2)
 
 
-# 4. 인증 오류 및 할당량 오류는 재시도하지 않음
 @pytest.mark.parametrize("code", [400, 401, 403, 429])
-def test_non_retryable_error(code):
+def test_verification_non_retryable_error(code):
 
     with patch(
         "rag.verifier.client.models.generate_content",
@@ -89,7 +156,7 @@ def test_non_retryable_error(code):
     ) as mock_sleep:
 
         with pytest.raises(errors.APIError):
-            generate_with_retry({"claim": "test"})
+            verify_with_retry({"claim": "test"})
 
         assert mock_generate.call_count == 1
         mock_sleep.assert_not_called()
