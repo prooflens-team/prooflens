@@ -273,6 +273,81 @@ test("a structured impossible date and a mismatched period are reported for that
   assert.equal(mismatch[0].testId, "test9");
 });
 
+test("a structured four-day label is compared with that test's own dates", () => {
+  const checks = checkConsistency({
+    ad: {
+      copy: "배송은 4일 걸립니다.",
+      testConditions: [
+        { id: "test1", startDate: "2018-10-15", endDate: "2018-11-02", duration: "4일" },
+      ],
+    },
+    claims: [],
+  });
+  assert.equal(checks.length, 1);
+  assert.equal(checks[0].type, "PERIOD_MISMATCH");
+  assert.equal(checks[0].testId, "test1");
+  assert.equal(checks[0].start, "2018-10-15");
+  assert.equal(checks[0].end, "2018-11-02");
+});
+
+test("a structured two-week span and twelve-week labels stay consistent", () => {
+  assert.deepEqual(checkConsistency({
+    ad: { testConditions: [{ id: "test2", startDate: "2025-08-27", endDate: "2025-09-10", duration: "2주" }] },
+    claims: [],
+  }), []);
+  assert.deepEqual(checkConsistency({
+    ad: { testConditions: [{ id: "test3", startDate: "2025-01-01", endDate: "2025-03-26", duration: "12주" }] },
+    claims: [],
+  }), []);
+  assert.deepEqual(checkConsistency({
+    ad: { testConditions: [{ id: "test4", startDate: "2025-01-01", endDate: "2025-03-26", duration: "12주간" }] },
+    claims: [],
+  }), []);
+  assert.deepEqual(checkConsistency({
+    ad: { testConditions: [{ id: "test5", startDate: "2025-01-15", endDate: "2025-02-15", duration: "1개월" }] },
+    claims: [],
+  }), []);
+});
+
+test("plain copy does not treat an unrelated period as a test duration", () => {
+  const checks = checkConsistency(result([
+    "시험기간 2025.08.27~2025.09.10",
+    "이벤트는 4일 진행하고 12주 사용 후기를 모읍니다.",
+  ].join("\n")));
+  assert.deepEqual(checks, []);
+});
+
+test("structured durations are not compared across different tests", () => {
+  const checks = checkConsistency({
+    ad: {
+      testConditions: [
+        { id: "test1", startDate: "2025-08-27", endDate: "2025-09-10", duration: "2주" },
+        { id: "test2", startDate: "2018-10-15", endDate: "2018-11-02", duration: "4일" },
+      ],
+    },
+    claims: [],
+  });
+  assert.equal(checks.length, 1);
+  assert.equal(checks[0].type, "PERIOD_MISMATCH");
+  assert.equal(checks[0].testId, "test2");
+});
+
+test("the same structured and copied period mismatch is reported once", () => {
+  const checks = checkConsistency({
+    ad: {
+      copy: "시험기간 4일간 2018.10.15~2018.11.02",
+      testConditions: [
+        { id: "test1", sourceId: "video1", startDate: "2018-10-15", endDate: "2018-11-02", duration: "4일" },
+      ],
+    },
+    claims: [],
+  });
+  assert.equal(checks.length, 1);
+  assert.equal(checks[0].type, "PERIOD_MISMATCH");
+  assert.equal(checks[0].testId, "test1");
+  assert.equal(checks[0].sourceId, "video1");
+});
+
 test("malformed structured tests do not replace a completed check", () => {
   const checks = checkConsistency({
     ad: { copy: "시험기간 2025.03.01~2025.03.14", testConditions: "잘못됨" },

@@ -298,6 +298,28 @@ function structuredMeta(test) {
   return meta;
 }
 
+function parseStructuredDuration(text) {
+  const value = text.trim();
+  const patterns = [
+    { unit: "day", re: /^(\d+)\s*일(?:\s*(?:간|동안))?$/ },
+    { unit: "week", re: /^(\d+)\s*(?:주(?:\s*간)?|weeks?)$/i },
+    { unit: "month", re: /^(\d+)\s*개월(?:\s*간)?$/ },
+  ];
+  for (const pattern of patterns) {
+    const match = value.match(pattern.re);
+    if (!match) continue;
+    const amount = Number(match[1]);
+    if (!Number.isInteger(amount) || amount <= 0 || amount > 520) return null;
+    return {
+      amount,
+      unit: pattern.unit,
+      days: pattern.unit === "week" ? amount * 7 : amount,
+      approximate: false,
+    };
+  }
+  return null;
+}
+
 function checksFromStructuredTest(test) {
   if (!test || typeof test !== "object") return [];
   const startRaw = typeof test.startDate === "string" ? test.startDate.trim() : "";
@@ -329,7 +351,7 @@ function checksFromStructuredTest(test) {
 
   const durationText = typeof test.duration === "string" ? test.duration.trim() : "";
   if (!durationText) return [];
-  const duration = findDurations(`시험기간 ${durationText}`)[0];
+  const duration = parseStructuredDuration(durationText) ?? findDurations(`시험기간 ${durationText}`)[0];
   if (!duration || periodMatches(start, end, duration)) return [];
   return [makeCheck("PERIOD_MISMATCH", "", {
     identity,
