@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useLocation } from "react-router-dom";
 import { buildRequest, MAX_IMAGES, type AnalysisRequest } from "../analysis/request";
 
 type Shot = {
@@ -22,11 +23,13 @@ type HomeProps = {
 };
 
 export function Home({ onStart }: HomeProps) {
+  const location = useLocation();
+  const inputError = (location.state as { inputError?: string } | null)?.inputError;
   const [url, setUrl] = useState("");
   const [copy, setCopy] = useState("");
   const [showCopy, setShowCopy] = useState(false);
   const [shots, setShots] = useState<Shot[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(inputError ?? null);
   const fileRef = useRef<HTMLInputElement>(null);
   const shotsRef = useRef<Shot[]>([]);
   const copyId = useId();
@@ -34,6 +37,10 @@ export function Home({ onStart }: HomeProps) {
   useEffect(() => {
     shotsRef.current = shots;
   }, [shots]);
+
+  useEffect(() => {
+    if (inputError) setMessage(inputError);
+  }, [inputError]);
 
   useEffect(() => {
     return () => {

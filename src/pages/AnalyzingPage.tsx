@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ANALYSIS_STEPS, type AnalysisPhase } from "../analysis/demo";
 import { isEmptyRequest, type AnalysisNavState } from "../analysis/request";
-import { ERROR_COPY, getScenario, type ErrorCode } from "../analysis/scenario";
+import { ERROR_COPY, errorText, getScenario, type ErrorCode } from "../analysis/scenario";
 import { AnalysisError, isAbort, runAnalysis, toScreenError } from "../api/analysis";
 import { Analyzing } from "../components/Analyzing";
 import { ErrorState } from "../components/ErrorState";
@@ -20,7 +20,7 @@ export function AnalyzingPage() {
   // 입력 없이 주소로 바로 들어오면 메인으로 돌려보냄 (?scenario= 테스트는 예외)
   const noInput = !scenario && isEmptyRequest(request);
   const [phase, setPhase] = useState<AnalysisPhase>(ANALYSIS_STEPS[0].id);
-  const [error, setError] = useState<ErrorCode | null>(null);
+  const [error, setError] = useState<{ code: ErrorCode; retryAfter?: number } | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -32,11 +32,18 @@ export function AnalyzingPage() {
     const controller = new AbortController();
     let settled = false;
 
-    const fail = (code: ErrorCode) => {
+    const fail = (code: ErrorCode, retryAfter?: number) => {
       if (settled) return;
       settled = true;
       controller.abort();
-      setError(code);
+      if (code === "INVALID_INPUT") {
+        navigate(
+          { pathname: "/", hash: "#analyze" },
+          { replace: true, state: { inputError: ERROR_COPY.INVALID_INPUT.text } },
+        );
+        return;
+      }
+      setError({ code, retryAfter });
     };
 
     const timer = window.setTimeout(() => fail("TIMEOUT"), TIMEOUT_MS);
@@ -55,8 +62,12 @@ export function AnalyzingPage() {
       })
       .catch((err: unknown) => {
         if (isAbort(err)) return;
-        if (err instanceof AnalysisError) console.warn("[analysis]", err.code, err.message);
-        fail(err instanceof AnalysisError ? toScreenError(err.code) : "ANALYSIS_FAILED");
+        if (err instanceof AnalysisError) {
+          console.warn("[analysis]", err.code, err.message);
+          fail(toScreenError(err.code), err.retryAfter);
+          return;
+        }
+        fail("ANALYSIS_FAILED");
       });
 
     return () => {
@@ -68,21 +79,26 @@ export function AnalyzingPage() {
   if (noInput) return null;
 
   if (error) {
-    const copy = ERROR_COPY[error];
+    const copy = ERROR_COPY[error.code];
     const backToInput = () => navigate({ pathname: "/", hash: "#analyze" });
     const retry = () => {
       setError(null);
       setPhase(ANALYSIS_STEPS[0].id);
       setAttempt((value) => value + 1);
     };
+    const needsNewInput =
+      error.code === "LINK_ACCESS_DENIED" ||
+      error.code === "UNSUPPORTED_VIDEO_URL" ||
+      error.code === "YOUTUBE_ACCESS_FAILED" ||
+      error.code === "INVALID_INPUT_COMBINATION";
 
     return (
       <ErrorState
         badge="분석 중단"
         title={copy.title}
-        text={copy.text}
+        text={errorText(error.code, error.retryAfter)}
         actions={
-          error === "LINK_ACCESS_DENIED"
+          needsNewInput
             ? [
                 { label: "스크린샷·문구로 다시 입력하기", onClick: backToInput },
                 { label: "처음으로", onClick: () => navigate("/"), variant: "secondary" },

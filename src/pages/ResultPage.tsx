@@ -10,9 +10,8 @@ export function ResultPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const scenario = getScenario(location.search);
-  // mock 모드나 ?scenario= 테스트에서는 목 데이터 사용
   const passed = (location.state as { result?: AnalysisResult } | null)?.result;
-  const data = passed ?? (USE_MOCK || scenario ? mockResult : null);
+  const data = passed ?? (USE_MOCK ? mockResult : null);
   const toInput = () => navigate({ pathname: "/", hash: "#analyze" });
 
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { mockResult, type AnalysisResult, type Claim } from "../analysis/mockResult";
+import { type AnalysisResult, type Claim } from "../analysis/mockResult";
 import {
   STATUS_DESC,
   STATUS_LABEL,
@@ -10,11 +10,11 @@ import {
 import { NoEvidenceNotice } from "./ErrorState";
 
 type ResultProps = {
-  data?: AnalysisResult;
+  data: AnalysisResult;
   onRestart?: () => void;
 };
 
-export function Result({ data = mockResult, onRestart }: ResultProps) {
+export function Result({ data, onRestart }: ResultProps) {
   return (
     <section className="analyzing report" aria-labelledby="report-title">
       <p className="analyzing-badge">AI 분석 리포트</p>

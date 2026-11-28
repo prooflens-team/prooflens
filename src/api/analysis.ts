@@ -6,20 +6,25 @@ import { toFormData, type AnalysisRequest } from "../analysis/request";
 import type { ErrorCode } from "../analysis/scenario";
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
 const POLL_INTERVAL_MS = 2_000;
 
 export type ApiErrorCode =
   | "INVALID_INPUT"
+  | "UNSUPPORTED_VIDEO_URL"
+  | "INVALID_INPUT_COMBINATION"
   | "LINK_ACCESS_DENIED"
+  | "YOUTUBE_ACCESS_FAILED"
   | "ANALYSIS_FAILED"
   | "NOT_FOUND"
-  | "TIMEOUT";
+  | "TIMEOUT"
+  | "RATE_LIMIT_EXCEEDED"
+  | "QUEUE_FULL";
 
 export type AnalysisStep = AnalysisStepId;
 
-type ApiError = { code: string; message?: string };
+type ApiError = { code: string; message?: string; retryAfter?: number };
 
 type CreateResponse = { analysisId: string; status: "processing" };
 
@@ -35,16 +40,28 @@ export class AnalysisError extends Error {
   constructor(
     public code: ApiErrorCode,
     message?: string,
+    public retryAfter?: number,
   ) {
     super(message ?? code);
     this.name = "AnalysisError";
   }
 }
 
-// 오류 화면은 3종류뿐이라 나머지 코드는 ANALYSIS_FAILED 화면으로 보여줌
+const SCREEN_CODES: ErrorCode[] = [
+  "INVALID_INPUT",
+  "UNSUPPORTED_VIDEO_URL",
+  "INVALID_INPUT_COMBINATION",
+  "LINK_ACCESS_DENIED",
+  "YOUTUBE_ACCESS_FAILED",
+  "ANALYSIS_FAILED",
+  "TIMEOUT",
+  "RATE_LIMIT_EXCEEDED",
+  "QUEUE_FULL",
+];
+
 export function toScreenError(code: ApiErrorCode): ErrorCode {
-  if (code === "LINK_ACCESS_DENIED" || code === "TIMEOUT") return code;
-  return "ANALYSIS_FAILED";
+  if (code === "NOT_FOUND") return "ANALYSIS_FAILED";
+  return SCREEN_CODES.includes(code) ? code : "ANALYSIS_FAILED";
 }
 
 export type RunOptions = {
@@ -63,6 +80,30 @@ async function runMock({ signal, onStep, scenario }: RunOptions): Promise<Analys
   if (scenario === "link-blocked") {
     await wait(1200, signal);
     throw new AnalysisError("LINK_ACCESS_DENIED");
+  }
+  if (scenario === "unsupported-video") {
+    await wait(600, signal);
+    throw new AnalysisError("UNSUPPORTED_VIDEO_URL");
+  }
+  if (scenario === "youtube-access") {
+    await wait(600, signal);
+    throw new AnalysisError("YOUTUBE_ACCESS_FAILED");
+  }
+  if (scenario === "bad-combination") {
+    await wait(600, signal);
+    throw new AnalysisError("INVALID_INPUT_COMBINATION");
+  }
+  if (scenario === "invalid-input") {
+    await wait(600, signal);
+    throw new AnalysisError("INVALID_INPUT");
+  }
+  if (scenario === "rate-limit") {
+    await wait(600, signal);
+    throw new AnalysisError("RATE_LIMIT_EXCEEDED", undefined, 30);
+  }
+  if (scenario === "queue-full") {
+    await wait(600, signal);
+    throw new AnalysisError("QUEUE_FULL", undefined, 30);
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -100,7 +141,11 @@ async function runReal(
       return res.result;
     }
     if (res.status === "failed") {
-      throw new AnalysisError(normalizeCode(res.error?.code), res.error?.message);
+      throw new AnalysisError(
+        normalizeCode(res.error?.code),
+        res.error?.message,
+        res.error?.retryAfter,
+      );
     }
   }
 }
@@ -119,8 +164,12 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const error = (body as { error?: ApiError } | null)?.error;
-    const fallback: ApiErrorCode = res.status === 404 ? "NOT_FOUND" : "ANALYSIS_FAILED";
-    throw new AnalysisError(error ? normalizeCode(error.code) : fallback, error?.message);
+    const fallback = fallbackCode(res.status);
+    throw new AnalysisError(
+      error ? normalizeCode(error.code) : fallback,
+      error?.message,
+      readRetryAfter(res, error?.retryAfter),
+    );
   }
   if (body === null) throw new AnalysisError("ANALYSIS_FAILED", "응답 형식이 올바르지 않습니다.");
   return body as T;
@@ -128,11 +177,29 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
 
 const KNOWN_CODES: ApiErrorCode[] = [
   "INVALID_INPUT",
+  "UNSUPPORTED_VIDEO_URL",
+  "INVALID_INPUT_COMBINATION",
   "LINK_ACCESS_DENIED",
+  "YOUTUBE_ACCESS_FAILED",
   "ANALYSIS_FAILED",
   "NOT_FOUND",
   "TIMEOUT",
+  "RATE_LIMIT_EXCEEDED",
+  "QUEUE_FULL",
 ];
+
+function fallbackCode(status: number): ApiErrorCode {
+  if (status === 404) return "NOT_FOUND";
+  if (status === 429) return "RATE_LIMIT_EXCEEDED";
+  return "ANALYSIS_FAILED";
+}
+
+function readRetryAfter(res: Response, bodySeconds?: number) {
+  const header = res.headers.get("Retry-After");
+  if (header && /^\d+$/.test(header.trim())) return Number(header);
+  if (typeof bodySeconds === "number" && bodySeconds > 0) return bodySeconds;
+  return undefined;
+}
 
 function normalizeCode(code: string | undefined): ApiErrorCode {
   return KNOWN_CODES.includes(code as ApiErrorCode) ? (code as ApiErrorCode) : "ANALYSIS_FAILED";

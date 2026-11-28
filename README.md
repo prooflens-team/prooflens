@@ -65,7 +65,7 @@ npm run dev
 
 | 변수 | 값 | 설명 |
 |---|---|---|
-| `VITE_USE_MOCK` | `true` (기본) / `false` | `true`면 백엔드 없이 목 데이터로 동작 |
+| `VITE_USE_MOCK` | `false` (기본) / `true` | `true`일 때만 백엔드 없이 목 데이터로 동작 |
 | `VITE_API_BASE_URL` | 예: `http://localhost:8080` | 백엔드 주소, 끝에 `/` 없이 |
 
 - API 호출은 `src/api/analysis.ts` 한 파일에 모여 있습니다. 화면은 `runAnalysis()`만 부릅니다.
@@ -79,11 +79,11 @@ npm run dev
 
 1. [vercel.com](https://vercel.com)에서 GitHub로 로그인 → **Add New → Project** → 이 저장소 선택
 2. Framework Preset: **Vite** (자동 인식). Build Command `npm run build`, Output Directory `dist`
-3. **Environment Variables**에 `VITE_USE_MOCK` = `true` 추가 (1차 배포는 mock)
+3. **Environment Variables**에 `VITE_USE_MOCK` = `false`, `VITE_API_BASE_URL` = `https://prooflens-production.up.railway.app` 추가
 4. **Deploy** → 나온 주소를 팀 단톡방과 백엔드(CORS 허용용)에 공유
 
 - `vercel.json`이 모든 경로를 `index.html`로 보내서 `/result` 등에서 새로고침해도 404가 나지 않습니다.
-- 실제 API로 바꿀 때: Vercel 환경변수에서 `VITE_USE_MOCK=false`, `VITE_API_BASE_URL=백엔드 주소`로 바꾸고 **Redeploy**. (Vite 환경변수는 빌드할 때 들어가므로 다시 배포해야 적용됩니다)
+- 환경변수를 바꾸면 **Redeploy**가 필요합니다. Vite 환경변수는 빌드할 때 들어갑니다.
 - 배포 주소는 `https`라서 백엔드도 `https` 주소여야 합니다. (`http` 백엔드는 브라우저가 막습니다)
 
 ---
@@ -123,7 +123,7 @@ src/
 
 ## 목 데이터
 
-결과 화면은 `src/analysis/mockResult.ts`의 가상 데이터로 표시됩니다.
+결과 화면은 서버가 보낸 분석 결과를 표시합니다. `VITE_USE_MOCK=true`일 때만 `src/analysis/mockResult.ts`의 가상 데이터를 사용합니다.
 
 - 광고, 제품, 분석 결과는 UI 시연용 **가상 예시**이며 실제 제품의 분석 결과가 아닙니다.
 - 주장 카드 4개가 검증 상태 4가지를 하나씩 보여 줍니다.
