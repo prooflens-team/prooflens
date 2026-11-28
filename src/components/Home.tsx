@@ -1,6 +1,14 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useLocation } from "react-router-dom";
-import { buildRequest, MAX_IMAGES, type AnalysisRequest } from "../analysis/request";
+import {
+  buildRequest,
+  IMAGE_TYPES,
+  isSupportedYouTubeUrl,
+  isYouTubeUrl,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGES,
+  type AnalysisRequest,
+} from "../analysis/request";
 
 type Shot = {
   id: string;
@@ -50,18 +58,21 @@ export function Home({ onStart }: HomeProps) {
 
   function addShots(list: FileList | null) {
     if (!list?.length) return;
-    const next = Array.from(list)
-      .filter((file) => file.type.startsWith("image/"))
-      .map((file) => ({
-        id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
-        name: file.name,
-        url: URL.createObjectURL(file),
-        file,
-      }));
-    if (!next.length) {
-      setMessage("이미지 파일만 추가할 수 있습니다.");
+    const files = Array.from(list);
+    if (files.some((file) => !IMAGE_TYPES.includes(file.type))) {
+      setMessage("PNG, JPG, WebP 이미지만 추가할 수 있습니다.");
       return;
     }
+    if (files.some((file) => file.size > MAX_IMAGE_BYTES)) {
+      setMessage("이미지는 한 장에 5MB 이하만 추가할 수 있습니다.");
+      return;
+    }
+    const next = files.map((file) => ({
+      id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
+      name: file.name,
+      url: URL.createObjectURL(file),
+      file,
+    }));
     if (shots.length + next.length > MAX_IMAGES) {
       next.forEach((shot) => URL.revokeObjectURL(shot.url));
       setMessage(`스크린샷은 최대 ${MAX_IMAGES}장까지 추가할 수 있습니다.`);
@@ -94,6 +105,27 @@ export function Home({ onStart }: HomeProps) {
       return;
     }
 
+    // 백엔드는 YouTube만 링크로 분석하고, YouTube 링크는 문구·스크린샷과 같이 보낼 수 없음
+    if (trimmedUrl && isYouTubeUrl(trimmedUrl)) {
+      if (trimmedCopy || shots.length > 0) {
+        setMessage(
+          "YouTube 링크는 광고 문구·스크린샷과 함께 분석할 수 없어요. 링크만 넣거나, 문구·스크린샷만 넣어 주세요.",
+        );
+        return;
+      }
+      if (!isSupportedYouTubeUrl(trimmedUrl)) {
+        setMessage(
+          "YouTube 영상(youtube.com/watch?v=…)이나 Shorts(youtube.com/shorts/…) 주소를 https로 넣어 주세요.",
+        );
+        return;
+      }
+    } else if (trimmedUrl && !trimmedCopy && shots.length === 0) {
+      setMessage(
+        "인스타그램·틱톡 등 YouTube가 아닌 링크는 링크만으로 분석할 수 없어요. 광고 문구를 입력하거나 이용 권한이 있는 스크린샷을 올려 주세요.",
+      );
+      return;
+    }
+
     setMessage(null);
     onStart(
       buildRequest({
@@ -122,7 +154,7 @@ export function Home({ onStart }: HomeProps) {
 
         <form id="analyze" className="card" onSubmit={onSubmit}>
           <label className="field-label" htmlFor="ad-url">
-            인스타그램 릴스, 유튜브 등 광고 링크를 붙여넣어 주세요
+            YouTube 영상·Shorts 광고 링크를 붙여넣어 주세요
           </label>
 
           <div className="field">
@@ -134,7 +166,7 @@ export function Home({ onStart }: HomeProps) {
                 setUrl(event.target.value);
                 if (message) setMessage(null);
               }}
-              placeholder="https://www.instagram.com/reel/... 또는 https://www.youtube.com/watch?v=..."
+              placeholder="https://www.youtube.com/watch?v=... 또는 https://youtube.com/shorts/..."
               inputMode="url"
               autoComplete="off"
               spellCheck={false}
@@ -144,8 +176,8 @@ export function Home({ onStart }: HomeProps) {
           <p className="hint">
             <InfoIcon />
             <span>
-              플랫폼에 따라 콘텐츠 접근이 제한될 수 있으며, 추가 자료를 요청할
-              수 있습니다.
+              YouTube 영상·Shorts 링크는 바로 분석할 수 있어요. 인스타그램·틱톡
+              광고는 광고 문구를 입력하거나 이용 권한이 있는 스크린샷을 올려 주세요.
             </span>
           </p>
 
@@ -217,7 +249,7 @@ export function Home({ onStart }: HomeProps) {
             ref={fileRef}
             className="sr-only"
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp"
             multiple
             onChange={(event) => {
               addShots(event.target.files);

@@ -1246,3 +1246,11 @@ a {
 .source-list a {
   overflow-wrap: anywhere;
 }
+
+.analyzing-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+  text-align: center;
+}

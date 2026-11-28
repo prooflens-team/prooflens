@@ -129,7 +129,7 @@ async function runReal(
   });
   const id = encodeURIComponent(created.analysisId);
 
-  // 180초 시간 초과는 AnalyzingPage에서 처리
+  // 시간 초과(문구·이미지 195초, YouTube 270초)는 AnalyzingPage에서 처리
   for (;;) {
     await wait(POLL_INTERVAL_MS, signal);
     const res = await call<StatusResponse>(`${API_BASE_URL}/api/analyses/${id}`, { signal });

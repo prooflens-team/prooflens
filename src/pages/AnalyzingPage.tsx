@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ANALYSIS_STEPS, type AnalysisPhase } from "../analysis/demo";
-import { isEmptyRequest, type AnalysisNavState } from "../analysis/request";
+import { isEmptyRequest, isYouTubeUrl, type AnalysisNavState } from "../analysis/request";
 import { ERROR_COPY, errorText, getScenario, type ErrorCode } from "../analysis/scenario";
 import { AnalysisError, isAbort, runAnalysis, toScreenError } from "../api/analysis";
 import { Analyzing } from "../components/Analyzing";
 import { ErrorState } from "../components/ErrorState";
 
-// 이 시간 안에 결과가 안 오면 시간 초과로 처리
-const TIMEOUT_MS = 180_000;
+// 이 시간 안에 결과가 안 오면 시간 초과로 처리 (docs/API.md 권장값, 서버 오류 응답이 먼저 오면 그걸 따름)
+const TIMEOUT_MS = 195_000;
+const YOUTUBE_TIMEOUT_MS = 270_000;
 
 export function AnalyzingPage() {
   const navigate = useNavigate();
@@ -19,6 +20,7 @@ export function AnalyzingPage() {
   const request = (location.state as AnalysisNavState | null)?.request;
   // 입력 없이 주소로 바로 들어오면 메인으로 돌려보냄 (?scenario= 테스트는 예외)
   const noInput = !scenario && isEmptyRequest(request);
+  const isVideo = isYouTubeUrl(request?.url);
   const [phase, setPhase] = useState<AnalysisPhase>(ANALYSIS_STEPS[0].id);
   const [error, setError] = useState<{ code: ErrorCode; retryAfter?: number } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -46,35 +48,42 @@ export function AnalyzingPage() {
       setError({ code, retryAfter });
     };
 
-    const timer = window.setTimeout(() => fail("TIMEOUT"), TIMEOUT_MS);
+    const timer = window.setTimeout(
+      () => fail("TIMEOUT"),
+      isVideo ? YOUTUBE_TIMEOUT_MS : TIMEOUT_MS,
+    );
 
-    runAnalysis(request ?? { images: [] }, {
-      signal: controller.signal,
-      scenario,
-      onStep: (next) => {
-        if (!settled) setPhase(next);
-      },
-    })
-      .then((result) => {
-        if (settled) return;
-        settled = true;
-        navigate(`/result${search}`, { replace: true, state: { result } });
+    // 개발 모드(StrictMode)에서 effect가 두 번 실행돼도 요청은 한 번만 보내도록 한 박자 늦게 시작
+    const start = window.setTimeout(() => {
+      runAnalysis(request ?? { images: [] }, {
+        signal: controller.signal,
+        scenario,
+        onStep: (next) => {
+          if (!settled) setPhase(next);
+        },
       })
-      .catch((err: unknown) => {
-        if (isAbort(err)) return;
-        if (err instanceof AnalysisError) {
-          console.warn("[analysis]", err.code, err.message);
-          fail(toScreenError(err.code), err.retryAfter);
-          return;
-        }
-        fail("ANALYSIS_FAILED");
-      });
+        .then((result) => {
+          if (settled) return;
+          settled = true;
+          navigate(`/result${search}`, { replace: true, state: { result } });
+        })
+        .catch((err: unknown) => {
+          if (isAbort(err)) return;
+          if (err instanceof AnalysisError) {
+            console.warn("[analysis]", err.code, err.message);
+            fail(toScreenError(err.code), err.retryAfter);
+            return;
+          }
+          fail("ANALYSIS_FAILED");
+        });
+    }, 0);
 
     return () => {
       controller.abort();
+      window.clearTimeout(start);
       window.clearTimeout(timer);
     };
-  }, [navigate, scenario, search, attempt, noInput]);
+  }, [navigate, scenario, search, attempt, noInput, isVideo]);
 
   if (noInput) return null;
 
@@ -117,5 +126,5 @@ export function AnalyzingPage() {
     ANALYSIS_STEPS.findIndex((step) => step.id === phase),
   );
 
-  return <Analyzing activeIndex={activeIndex} />;
+  return <Analyzing activeIndex={activeIndex} isVideo={isVideo} />;
 }

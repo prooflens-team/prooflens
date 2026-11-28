@@ -3,6 +3,40 @@
 
 export const MAX_IMAGES = 5;
 
+// 백엔드가 받는 이미지 형식·크기 (docs/API.md 2번)
+export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+const YOUTUBE_HOSTS = ["www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be"];
+
+// YouTube 주소인지 (형식이 맞는지와 상관없이 도메인만 보고 판단)
+export function isYouTubeUrl(value: string | undefined) {
+  if (!value) return false;
+  try {
+    return YOUTUBE_HOSTS.includes(new URL(value.trim()).hostname);
+  } catch {
+    return false;
+  }
+}
+
+// 백엔드가 분석하는 YouTube 주소: https + watch?v= / shorts/ / youtu.be/ + 11자리 영상 ID
+export function isSupportedYouTubeUrl(value: string) {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || !YOUTUBE_HOSTS.includes(url.hostname)) return false;
+
+  let id = "";
+  if (url.hostname === "youtu.be") id = url.pathname.slice(1);
+  else if (url.pathname === "/watch") id = url.searchParams.get("v") ?? "";
+  else if (url.pathname.startsWith("/shorts/")) id = url.pathname.slice("/shorts/".length);
+
+  return /^[A-Za-z0-9_-]{11}$/.test(id.replace(/\/$/, ""));
+}
+
 export type AnalysisRequest = {
   url?: string;
   copy?: string;
