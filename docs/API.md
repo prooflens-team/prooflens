@@ -128,8 +128,27 @@ type VerificationStatus = "SUPPORTED" | "CONFLICT" | "INSUFFICIENT" | "UNVERIFIA
 interface AnalysisResult {
   ad: AnalyzedAd;
   claims: Claim[];          // 주장을 못 찾으면 빈 배열 []
+  consistencyChecks: ConsistencyCheck[]; // 광고 내부 정합성. 문제 없으면 []
   checkBeforeBuy: string[]; // 구매 전 추가 확인 사항
   disclaimer: string;       // 결과 하단 안내 문구
+}
+
+type ConsistencyCheckType =
+  | "DATE_INCONSISTENCY"  // 시험 종료일이 시작일보다 앞섬
+  | "INVALID_DATE"        // 시험기간에 없는 날짜
+  | "PERIOD_MISMATCH"     // 안내한 시험 길이와 날짜 범위가 다름
+  | "CHECK_UNAVAILABLE";  // 내부 검증을 끝내지 못함. 빈 배열과 다름
+
+interface ConsistencyCheck {
+  id: string;            // 결과 안에서 겹치지 않는 값. 예: "check1"
+  type: ConsistencyCheckType;
+  title: string;
+  severity: "WARNING" | "INFO";
+  description: string;
+  originalText: string; // 광고 원문에 있던 표기. 검증 실패 시 빈 문자열
+  recommendation: string;
+  start?: string;        // 해석에 성공한 시작일. "YYYY-MM-DD"
+  end?: string;          // 해석에 성공한 종료일. "YYYY-MM-DD"
 }
 
 interface AnalyzedAd {
@@ -209,12 +228,51 @@ interface EvidenceSource {
       "sources": []
     }
   ],
+  "consistencyChecks": [],
   "checkBeforeBuy": [
     "제품의 기능성화장품 심사·보고 여부를 제품 공식 정보에서 확인하세요."
   ],
   "disclaimer": "본 결과는 광고의 진위를 단정하지 않습니다. 확인 가능한 자료와 비교한 참고 정보입니다."
 }
 ```
+
+---
+
+### 광고 내부 정합성 `consistencyChecks`
+
+RAG 근거 검증과 별도로, 광고 문장 안의 시험기간만 규칙으로 확인한 결과입니다. Gemini를 다시 호출하지 않습니다. 주장의 `status`는 바꾸지 않고, 이 항목을 논문·고시 출처로 넣지 않습니다.
+
+- `[]`는 두 경우를 구분하지 않습니다. 시험기간으로 볼 날짜 범위가 없을 때도 `[]`이고, 시험기간을 확인했지만 역전·없는 날짜·기간 차이가 없을 때도 `[]`입니다.
+- `CHECK_UNAVAILABLE`이면 검증을 끝내지 못한 것입니다. 빈 배열과 다르며, 문제가 없다는 뜻이 아닙니다.
+- `WARNING`은 추출된 문구를 기준으로 한 확인 필요 사항입니다. 허위 광고 판정이 아니고, OCR이나 모델의 날짜 인식 오류를 광고의 확정 오류로 단정하지 않습니다.
+- 시험기관, 시험대상, 인원이 다르다는 이유만으로 항목을 만들지 않습니다.
+- 감소율·개선율이 100%를 넘는다는 이유만으로 항목을 만들지 않습니다.
+
+숫자 날짜는 연.월.일 순서로 읽습니다. 두 자리 연도는 2000–2099년입니다. `25.03.18`은 2025-03-18입니다. 월이 1–12가 아니어서 연.월.일로 읽을 수 없는 표기는 확정 오류로 올리지 않습니다.
+
+```json
+"consistencyChecks": [
+  {
+    "id": "check1",
+    "type": "DATE_INCONSISTENCY",
+    "title": "시험기간 표기 확인 필요",
+    "severity": "WARNING",
+    "description": "추출된 시험 종료일이 시작일보다 앞섭니다. 광고 원문 또는 문구 인식 결과일 수 있어 확인이 필요합니다.",
+    "originalText": "25.03.18~23.03.20",
+    "recommendation": "시험성적서 원본 및 정확한 시험기간을 확인해주세요.",
+    "start": "2025-03-18",
+    "end": "2023-03-20"
+  }
+]
+```
+
+프론트엔드는 아직 이 필드를 그리지 않습니다. 응답에 필드가 있어도 기존 화면은 그대로 동작합니다. 표시를 넣을 때는 아래만 추가하면 됩니다.
+
+1. `AnalysisResult`에 `consistencyChecks`를 선택 필드로 추가합니다.
+2. 주장 카드나 근거 출처와 분리된 안내 영역에 그립니다.
+3. `WARNING`을 `CONFLICT`로 바꾸거나 허위 광고로 단정하지 않습니다.
+4. `[]`는 확인할 시험기간이 없는 경우와 확인 후 문제가 없는 경우를 모두 포함합니다. 둘을 다른 화면으로 나누지 않습니다.
+5. `CHECK_UNAVAILABLE`은 확인 불가로 따로 보여 줍니다.
 
 ---
 

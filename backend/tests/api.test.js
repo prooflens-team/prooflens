@@ -110,8 +110,25 @@ test("copy analysis completes in the frontend result shape", async () => {
   assert.match(result.ad.analyzedAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
   assert.equal(result.claims[0].status, "INSUFFICIENT");
   assert.deepEqual(result.claims[0].sources, []);
+  assert.deepEqual(result.consistencyChecks, []);
   assert.ok(result.disclaimer);
   assert.ok(result.checkBeforeBuy.length > 0);
+});
+
+test("reversed test dates are attached without changing the claim status", async () => {
+  const { app } = await makeApp();
+  const created = await request(app)
+    .post("/api/analyses")
+    .field("copy", "시험기관 Intertek 시험기간 25.03.18~23.03.20 성인 남녀 31명");
+  const status = await waitFor(app, created.body.analysisId);
+  assert.equal(status.body.status, "completed");
+  const result = status.body.result;
+  assert.equal(result.claims[0].status, "INSUFFICIENT");
+  assert.equal(result.claims[0].text, "시험기관 Intertek 시험기간 25.03.18~23.03.20 성인 남녀 31명");
+  assert.equal(result.consistencyChecks.length, 1);
+  assert.equal(result.consistencyChecks[0].type, "DATE_INCONSISTENCY");
+  assert.equal(result.consistencyChecks[0].originalText, "25.03.18~23.03.20");
+  assert.equal(result.ad.productName, "확인 불가");
 });
 
 test("png upload is analyzed and the temp file is removed", async () => {
@@ -200,6 +217,7 @@ test("empty claims skip RAG and still complete", async () => {
   const status = await waitFor(app, created.body.analysisId);
   assert.equal(status.body.status, "completed");
   assert.deepEqual(status.body.result.claims, []);
+  assert.deepEqual(status.body.result.consistencyChecks, []);
   assert.match(status.body.result.checkBeforeBuy[0], /효능 주장/);
 });
 

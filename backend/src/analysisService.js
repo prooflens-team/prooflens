@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ApiError } from "./errors.js";
 import { isInsideDir, removeFiles } from "./images.js";
+import { applyConsistency, trialsFrom } from "./services/consistencyChecker.js";
 import { normalizeResult } from "./normalizeResult.js";
 import { redact } from "./redact.js";
 import { runPython } from "./pythonRunner.js";
@@ -96,6 +97,7 @@ export function createAnalysisService(config, jobs) {
 
       const extracted = analysis.json.result;
       const claims = Array.isArray(extracted.claims) ? extracted.claims : [];
+      const extractedTrials = trialsFrom(extracted?.trials, extracted?.ad?.trials);
       let rawResult = extracted;
 
       if (claims.length > 0) {
@@ -117,7 +119,10 @@ export function createAnalysisService(config, jobs) {
       outcome = {
         status: "completed",
         step: "report",
-        result: normalizeResult(rawResult),
+        result: applyConsistency({
+          ...normalizeResult(rawResult),
+          trials: trialsFrom(rawResult?.trials, rawResult?.ad?.trials, extractedTrials),
+        }),
         error: null,
       };
     } catch (error) {
