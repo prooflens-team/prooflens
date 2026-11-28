@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 
 from pathlib import Path
@@ -25,6 +26,9 @@ def embed_text(text, task_type="RETRIEVAL_DOCUMENT"):
 
     if not isinstance(text, str) or not text.strip():
         raise ValueError("임베딩할 텍스트가 비어 있습니다.")
+
+    if os.getenv("PROOFLENS_API_LOG") == "1":
+        print("PROOFLENS_API_CALL embed", file=sys.stderr, flush=True)
 
     response = client.models.embed_content(
         model=MODEL,

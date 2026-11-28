@@ -22,9 +22,17 @@ function testConfig(uploadDir, extra = {}) {
     ...base,
     uploadDir,
     timeoutMs: 5_000,
+    timeoutTextMs: null,
+    timeoutYoutubeMs: null,
+    timeoutVideoMs: null,
     maxImageBytes: 5 * 1024 * 1024,
     maxImages: 5,
     maxConcurrent: 2,
+    maxConcurrentPerIp: 10,
+    maxQueued: 10,
+    ratePerIp: 100,
+    ratePollPerMinute: 10_000,
+    trustProxyHops: 0,
     pythonBin: process.execPath,
     pythonPrefix: [fixture],
     pythonEnv: {},
@@ -234,7 +242,7 @@ test("analysis timeout kills the python process and removes files", async () => 
     .attach("images", png, { filename: "ad.png", contentType: "image/png" });
   const status = await waitFor(app, created.body.analysisId);
   assert.equal(status.body.status, "failed");
-  assert.equal(status.body.error.code, "ANALYSIS_FAILED");
+  assert.equal(status.body.error.code, "TIMEOUT");
   assert.match(status.body.error.message, /제한 시간/);
   const pid = Number(await fs.readFile(pidFile, "utf8"));
   await new Promise((resolve) => setTimeout(resolve, 1200));

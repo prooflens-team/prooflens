@@ -228,3 +228,56 @@ def test_invalid_url_does_not_call_api():
             )
 
     mocked.assert_not_called()
+
+
+def test_run_analysis_maps_video_url(monkeypatch):
+    captured = {}
+
+    def fake_analyze_ad(**kwargs):
+        captured.update(kwargs)
+        return {"ad": {}, "claims": []}
+
+    monkeypatch.setattr("ai.run_analysis.analyze_ad", fake_analyze_ad)
+    from ai.run_analysis import analyze_request
+
+    analyze_request({
+        "copy": "",
+        "imagePaths": [],
+        "videoUrl": WATCH_URL,
+    })
+
+    assert captured["copy"] == ""
+    assert captured["image_paths"] == []
+    assert captured["video_path"] is None
+    assert captured["video_url"] == WATCH_URL
+
+
+def test_run_analysis_maps_video_path(monkeypatch):
+    captured = {}
+
+    def fake_analyze_ad(**kwargs):
+        captured.update(kwargs)
+        return {"ad": {}, "claims": []}
+
+    monkeypatch.setattr("ai.run_analysis.analyze_ad", fake_analyze_ad)
+    from ai.run_analysis import analyze_request
+
+    analyze_request({
+        "copy": "",
+        "imagePaths": [],
+        "videoPath": "/app/uploads/unique-id.mp4",
+    })
+
+    assert captured["video_path"] == "/app/uploads/unique-id.mp4"
+    assert captured["video_url"] is None
+
+
+def test_run_analysis_rejects_non_string_video_url():
+    from ai.run_analysis import analyze_request
+
+    with pytest.raises(ValueError, match="videoUrl"):
+        analyze_request({
+            "copy": "",
+            "imagePaths": [],
+            "videoUrl": 1,
+        })

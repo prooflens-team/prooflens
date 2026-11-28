@@ -24,7 +24,7 @@ export function createJobStore({ jobTtlMs, maxJobs }) {
   }
 
   return {
-    create(step = "confirm") {
+    create(step = "confirm", meta = {}) {
       sweep(Date.now());
       while (jobs.size >= maxJobs) {
         const removable = oldestFinished();
@@ -40,9 +40,29 @@ export function createJobStore({ jobTtlMs, maxJobs }) {
         error: null,
         createdAt: now,
         updatedAt: now,
+        clientIp: meta.clientIp || "",
+        contentHash: meta.contentHash || "",
+        inputType: meta.inputType || "text",
       };
       jobs.set(job.analysisId, job);
       return job;
+    },
+    countProcessingByIp(ip) {
+      if (!ip) return 0;
+      let count = 0;
+      for (const job of jobs.values()) {
+        if (job.status === "processing" && job.clientIp === ip) count += 1;
+      }
+      return count;
+    },
+    findActiveDuplicate(ip, hash) {
+      if (!ip || !hash) return null;
+      for (const job of jobs.values()) {
+        if (job.status === "processing" && job.clientIp === ip && job.contentHash === hash) {
+          return job;
+        }
+      }
+      return null;
     },
     get(id) {
       return jobs.get(id) ?? null;

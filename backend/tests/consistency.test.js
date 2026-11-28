@@ -199,6 +199,99 @@ test("malformed trials and dates keep the analysis result usable", () => {
   assert.equal(output.consistencyChecks.some((check) => check.type === "CHECK_UNAVAILABLE"), false);
 });
 
+test("structured infant cosmetic tests keep separate trials and flag only the reversed dates", () => {
+  const checks = checkConsistency({
+    ad: {
+      copy: "시험기관 Intertek 시험기간 25.03.18~23.03.20 성인 남녀 31명. 2 Week Test 시험기관 엘리드 시험기간 2025.08.27~2025.09.10 영유아 24명",
+      conditions: [],
+      targetAudience: "영유아",
+      testConditions: [
+        {
+          id: "test1",
+          sourceId: "image1",
+          institution: "Intertek",
+          participants: "성인 남녀 31명",
+          sampleSize: 31,
+          startDate: "25.03.18",
+          endDate: "23.03.20",
+          result: "자극도 0.00",
+        },
+        {
+          id: "test2",
+          sourceId: "image2",
+          institution: "엘리드",
+          participants: "3개월~36개월 영유아 24명",
+          sampleSize: 24,
+          startDate: "2025.08.27",
+          endDate: "2025.09.10",
+          duration: "2 Week Test",
+        },
+      ],
+    },
+    claims: [
+      { id: "c1", text: "자극도 0.00", status: "UNVERIFIABLE", sources: [] },
+      { id: "c2", text: "영유아 24명 안전성", status: "INSUFFICIENT", sources: [] },
+    ],
+  });
+  assert.equal(checks.length, 1);
+  assert.equal(checks[0].type, "DATE_INCONSISTENCY");
+  assert.equal(checks[0].originalText, "25.03.18~23.03.20");
+  assert.equal(checks[0].testId, "test1");
+  assert.equal(checks[0].sourceId, "image1");
+  assert.equal(checks[0].claims, undefined);
+});
+
+test("the same reversed dates on different tests stay separate", () => {
+  const checks = checkConsistency({
+    ad: {
+      copy: "",
+      testConditions: [
+        { id: "test1", startDate: "25.03.18", endDate: "23.03.20" },
+        { id: "test2", startDate: "25.03.18", endDate: "23.03.20" },
+      ],
+    },
+    claims: [],
+  });
+  assert.equal(checks.length, 2);
+  assert.deepEqual(checks.map((check) => check.testId), ["test1", "test2"]);
+  assert.equal(checks.every((check) => check.originalText === ""), true);
+});
+
+test("a structured impossible date and a mismatched period are reported for that test only", () => {
+  const invalid = checkConsistency({
+    ad: { testConditions: [{ id: "test1", startDate: "2025-02-29", endDate: "2025-03-01" }] },
+    claims: [],
+  });
+  assert.equal(invalid[0].type, "INVALID_DATE");
+  assert.equal(invalid[0].testId, "test1");
+
+  const mismatch = checkConsistency({
+    ad: { testConditions: [{ id: "test9", startDate: "2025-03-01", endDate: "2025-06-01", duration: "2주" }] },
+    claims: [],
+  });
+  assert.equal(mismatch[0].type, "PERIOD_MISMATCH");
+  assert.equal(mismatch[0].testId, "test9");
+});
+
+test("malformed structured tests do not replace a completed check", () => {
+  const checks = checkConsistency({
+    ad: { copy: "시험기간 2025.03.01~2025.03.14", testConditions: "잘못됨" },
+    claims: [{ text: 15 }, null],
+  });
+  assert.deepEqual(checks, []);
+});
+
+test("a failed consistency check keeps the separate date guidance", () => {
+  const input = result("시험기간 2025.03.01~2025.03.14");
+  input.dateReview = ["피부 저자극 시험: 광고에 표시된 시험 종료일(2023-03-20)이 시작일(2025-03-18)보다 앞섭니다."];
+  Object.defineProperty(input, "trials", { get() { throw new Error("boom"); } });
+  const output = applyConsistency(input);
+  assert.equal(output.consistencyChecks[0].type, "CHECK_UNAVAILABLE");
+  assert.equal(output.checkBeforeBuy.at(-1), input.dateReview[0]);
+  assert.equal(Object.hasOwn(output, "dateReview"), false);
+  assert.equal(output.claims[0].status, "UNVERIFIABLE");
+});
+
 test("a checker failure stays inside the result and is not an empty success", () => {
   const input = result("시험기간 2025.03.01~2025.03.14");
   Object.defineProperty(input, "trials", { get() { throw new Error("boom"); } });

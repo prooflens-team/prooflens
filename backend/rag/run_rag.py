@@ -2,12 +2,22 @@ import sys
 import json
 import time
 
+from google.genai import errors
+
 if __package__:
     from .verifier import verify_claim
-    from .ad_context import review_ad_context
+    from .ad_context import review_ad_context, split_ad_review
 else:
     from verifier import verify_claim
-    from ad_context import review_ad_context
+    from ad_context import review_ad_context, split_ad_review
+
+CLAIM_METADATA = (
+    "claimType",
+    "sourceIds",
+    "testIds",
+    "conditions",
+    "timestamps",
+)
 
 
 def validate_input(data):
@@ -66,13 +76,43 @@ def validate_input(data):
     return ad, claims
 
 
-def build_check_before_buy(ad, verified_claims):
+def merge_verified_claims(original_claims, verified_claims):
+    """RAG 판정은 유지하고 원본 주장의 부가 정보는 claim.id로 다시 붙입니다."""
+
+    verified_by_id = {}
+
+    for claim in verified_claims:
+        if isinstance(claim, dict) and isinstance(claim.get("id"), str):
+            verified_by_id[claim["id"]] = claim
+
+    merged = []
+
+    for original in original_claims:
+        verified = verified_by_id.get(original.get("id"))
+        if verified is None:
+            continue
+
+        item = dict(verified)
+
+        for field in CLAIM_METADATA:
+            if field in original and original[field] is not None:
+                item[field] = original[field]
+
+        merged.append(item)
+
+    return merged
+
+
+def build_check_before_buy(ad, verified_claims, include_date_checks=True):
     """광고 정보와 검증 결과를 기반으로 구매 전 확인사항을 생성합니다."""
 
     check_before_buy = []
 
     # 1. 광고 자체 시험 정보 검토
-    context_findings = review_ad_context(ad)
+    context_findings = review_ad_context(
+        ad,
+        include_date_checks=include_date_checks,
+    )
 
     check_before_buy.extend(context_findings)
 
@@ -122,6 +162,25 @@ def build_check_before_buy(ad, verified_claims):
     return list(dict.fromkeys(check_before_buy))
 
 
+def raise_if_cost_stop(error):
+    """인증 오류와 사용량 초과는 다음 주장을 호출하지 않습니다."""
+
+    try:
+        code = int(getattr(error, "code", None))
+    except (TypeError, ValueError):
+        return
+
+    if code in (401, 403):
+        raise RuntimeError(
+            "AI API 인증 또는 접근 권한을 확인해주세요."
+        ) from error
+
+    if code == 429:
+        raise RuntimeError(
+            "AI API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요."
+        ) from error
+
+
 def analyze_claims(data):
     """광고 주장별 RAG 검증 및 광고 맥락 분석을 수행합니다."""
 
@@ -152,12 +211,17 @@ def analyze_claims(data):
             flush=True
         )
 
-        result = verify_claim(
-            claim_id=claim_id,
-            claim_text=claim_text,
-            ad=ad,
-            claim=claim
-        )
+        try:
+            result = verify_claim(
+                claim_id=claim_id,
+                claim_text=claim_text,
+                ad=ad,
+                claim=claim,
+                include_date_checks=False,
+            )
+        except errors.APIError as error:
+            raise_if_cost_stop(error)
+            raise
 
         verified_claims.append(result)
 
@@ -170,16 +234,21 @@ def analyze_claims(data):
             flush=True
         )
 
-    # 3. 구매 전 확인사항 생성
+    verified_claims = merge_verified_claims(claims, verified_claims)
+    _, date_review = split_ad_review(ad)
+
+    # 3. 구매 전 확인사항 생성. 날짜 정합성은 통합 서버의 별도 검증이 담당합니다.
     check_before_buy = build_check_before_buy(
         ad,
-        verified_claims
+        verified_claims,
+        include_date_checks=False,
     )
 
     # 4. 최종 결과 구성
     result = {
         "ad": ad,
         "claims": verified_claims,
+        "dateReview": date_review,
         "checkBeforeBuy": check_before_buy,
         "disclaimer": (
             "본 분석은 수집된 근거자료와 광고에 표시된 "

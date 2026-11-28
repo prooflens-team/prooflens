@@ -154,15 +154,17 @@ def parse_date(value):
         return None
 
 
-def review_ad_context(ad=None, claim=None):
-    """광고 자체의 시험 정보를 검토합니다.
+def split_ad_review(ad=None, claim=None):
+    """광고 맥락 검토와 날짜 정합성 검토를 분리합니다.
 
-    광고에 기재된 정보의 진위나 제품 안전성을 확정하지 않습니다.
+    날짜 항목은 통합 서버에서 규칙 기반 정합성 검증이 담당합니다.
+    이 함수를 직접 호출하는 기존 검토에서는 두 결과를 함께 쓸 수 있습니다.
     """
 
     ad = ad or {}
 
     findings = []
+    date_findings = []
 
     target = normalize_text(ad.get("targetAudience"))
 
@@ -189,10 +191,10 @@ def review_ad_context(ad=None, claim=None):
         duration = normalize_text(test.get("duration"))
         result = normalize_text(test.get("result"))
 
-        # 1. 시험기간 표기 오류
+        # 1. 시험기간 표기 오류. 통합 실행 시 정합성 검증과 중복되지 않도록 분리합니다.
         if start and end and end < start:
 
-            findings.append(
+            date_findings.append(
                 f"{label}: 광고에 표시된 시험 종료일"
                 f"({end_raw})이 시작일({start_raw})보다 "
                 "앞섭니다. 원본 시험성적서에서 "
@@ -204,7 +206,7 @@ def review_ad_context(ad=None, claim=None):
             or (end_raw and end is None)
         ):
 
-            findings.append(
+            date_findings.append(
                 f"{label}: 시험 날짜의 형식 또는 "
                 "유효성을 확인할 필요가 있습니다."
             )
@@ -336,4 +338,18 @@ def review_ad_context(ad=None, claim=None):
             "제형 및 성분이 일치하는지 확인하세요."
         )
 
+    return list(dict.fromkeys(findings)), list(dict.fromkeys(date_findings))
+
+
+def review_ad_context(ad=None, claim=None, include_date_checks=True):
+    """광고 자체의 시험 정보를 검토합니다.
+
+    광고에 기재된 정보의 진위나 제품 안전성을 확정하지 않습니다.
+    include_date_checks가 거짓이면 날짜 역전과 날짜 형식 안내만 제외합니다.
+    """
+
+    context_findings, date_findings = split_ad_review(ad, claim)
+    findings = list(context_findings)
+    if include_date_checks:
+        findings.extend(date_findings)
     return list(dict.fromkeys(findings))

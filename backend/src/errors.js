@@ -1,17 +1,23 @@
 export class ApiError extends Error {
-  constructor(status, code, message) {
+  constructor(status, code, message, headers = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.headers = headers;
+    const retryAfter = Number(headers?.["Retry-After"]);
+    this.retryAfter = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : null;
   }
 }
 
 export function toErrorBody(error) {
   if (error instanceof ApiError) {
+    const item = { code: error.code, message: error.message };
+    if (error.retryAfter) item.retryAfter = error.retryAfter;
     return {
       status: error.status,
-      body: { error: { code: error.code, message: error.message } },
+      headers: error.headers,
+      body: { error: item },
     };
   }
   return {

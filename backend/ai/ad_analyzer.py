@@ -23,7 +23,7 @@ else:
 # 프로젝트 경로 설정
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# 환경변수 불러오기
+# 이미 프로세스에 있는 환경변수가 .env보다 우선합니다.
 load_dotenv(BASE_DIR / ".env")
 
 # Gemini 클라이언트 생성. SDK 자체 재시도는 끄고, 아래 함수에서 한 번만 재시도합니다.
@@ -51,6 +51,8 @@ def generate_with_retry(contents, max_attempts=2):
     for attempt in range(1, max_attempts + 1):
 
         try:
+            if os.getenv("PROOFLENS_API_LOG") == "1":
+                print("PROOFLENS_API_CALL generate", file=sys.stderr, flush=True)
             return client.models.generate_content(
                 model=MODEL,
                 contents=contents,

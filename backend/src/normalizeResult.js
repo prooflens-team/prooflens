@@ -30,6 +30,42 @@ function text(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function optionalText(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringList(value) {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+}
+
+function cleanTimestamps(value) {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const sourceId = optionalText(item.sourceId);
+    if (!sourceId || typeof item.startSeconds !== "number" || item.startSeconds < 0) return [];
+    const timestamp = { sourceId, startSeconds: item.startSeconds };
+    if (typeof item.endSeconds === "number" && item.endSeconds >= 0) timestamp.endSeconds = item.endSeconds;
+    return [timestamp];
+  });
+}
+
+function cleanTestCondition(test) {
+  if (!test || typeof test !== "object") return null;
+  const cleaned = {};
+  for (const key of ["id", "sourceId", "testType", "institution", "participants", "startDate", "endDate", "duration", "result"]) {
+    const value = optionalText(test[key]);
+    if (value) cleaned[key] = value;
+  }
+  if (Number.isInteger(test.sampleSize) && test.sampleSize >= 0) cleaned.sampleSize = test.sampleSize;
+  return Object.keys(cleaned).length > 0 ? cleaned : null;
+}
+
+function assignOptional(target, key, value) {
+  if (value !== undefined) target[key] = value;
+}
+
 function cleanSource(source) {
   if (!source || typeof source !== "object") return null;
   const title = text(source.title);
@@ -44,7 +80,7 @@ function cleanSource(source) {
 function cleanClaim(claim, index) {
   const status = STATUSES.has(claim?.status) ? claim.status : "UNVERIFIABLE";
   const summary = text(claim?.summary, STATUS_SUMMARY[status]);
-  return {
+  const cleaned = {
     id: text(claim?.id, `c${index + 1}`),
     text: text(claim?.text),
     status,
@@ -52,6 +88,12 @@ function cleanClaim(claim, index) {
     detail: text(claim?.detail, summary),
     sources: Array.isArray(claim?.sources) ? claim.sources.map(cleanSource).filter(Boolean) : [],
   };
+  assignOptional(cleaned, "claimType", optionalText(claim?.claimType));
+  assignOptional(cleaned, "sourceIds", stringList(claim?.sourceIds));
+  assignOptional(cleaned, "testIds", stringList(claim?.testIds));
+  assignOptional(cleaned, "conditions", stringList(claim?.conditions));
+  assignOptional(cleaned, "timestamps", cleanTimestamps(claim?.timestamps));
+  return cleaned;
 }
 
 export function normalizeResult(raw) {
@@ -65,18 +107,26 @@ export function normalizeResult(raw) {
     checkBeforeBuy.push(EMPTY_CLAIMS_NOTICE);
   }
 
+  const normalizedAd = {
+    title: text(ad.title, "광고 분석 결과"),
+    platform: text(ad.platform, "직접 입력"),
+    copy: text(ad.copy),
+    productName: text(ad.productName, "확인 불가"),
+    category: text(ad.category),
+    conditions: Array.isArray(ad.conditions)
+      ? ad.conditions.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [],
+    analyzedAt: formatKst(),
+  };
+  assignOptional(normalizedAd, "brandName", optionalText(ad.brandName));
+  assignOptional(normalizedAd, "targetAudience", optionalText(ad.targetAudience));
+  assignOptional(normalizedAd, "ingredients", stringList(ad.ingredients));
+  if (Array.isArray(ad.testConditions)) {
+    normalizedAd.testConditions = ad.testConditions.map(cleanTestCondition).filter(Boolean);
+  }
+
   return {
-    ad: {
-      title: text(ad.title, "광고 분석 결과"),
-      platform: text(ad.platform, "직접 입력"),
-      copy: text(ad.copy),
-      productName: text(ad.productName, "확인 불가"),
-      category: text(ad.category),
-      conditions: Array.isArray(ad.conditions)
-        ? ad.conditions.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
-        : [],
-      analyzedAt: formatKst(),
-    },
+    ad: normalizedAd,
     claims,
     checkBeforeBuy,
     disclaimer: text(raw?.disclaimer, DEFAULT_DISCLAIMER),

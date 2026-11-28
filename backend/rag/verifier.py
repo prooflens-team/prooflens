@@ -68,6 +68,8 @@ def generate_with_retry(input_data, max_attempts=2):
     for attempt in range(1, max_attempts + 1):
 
         try:
+            if os.getenv("PROOFLENS_API_LOG") == "1":
+                print("PROOFLENS_API_CALL generate", file=sys.stderr, flush=True)
             return client.models.generate_content(
                 model=MODEL,
                 contents=json.dumps(
@@ -209,7 +211,8 @@ def verify_claim(
     claim_id,
     claim_text,
     ad=None,
-    claim=None
+    claim=None,
+    include_date_checks=True,
 ):
 
     if not isinstance(claim_text, str) or not claim_text.strip():
@@ -221,7 +224,11 @@ def verify_claim(
     total_start = time.perf_counter()
 
     # 1. 광고 자체 정보 검토
-    findings = review_ad_context(ad, claim)
+    findings = review_ad_context(
+        ad,
+        claim,
+        include_date_checks=include_date_checks,
+    )
 
     # 2. 광고 맥락 기반 근거자료 검색
     search_start = time.perf_counter()

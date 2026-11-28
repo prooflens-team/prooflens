@@ -7,6 +7,39 @@ else:
     from ad_analyzer import analyze_ad
 
 
+def optional_text(data, key):
+    value = data.get(key, "")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{key}는 문자열이어야 합니다.")
+    return value or None
+
+
+def analyze_request(data):
+    if not isinstance(data, dict):
+        raise ValueError("JSON 객체를 입력해주세요.")
+
+    copy = data.get("copy", "")
+    image_paths = data.get("imagePaths", [])
+
+    if not isinstance(copy, str):
+        raise ValueError("copy는 문자열이어야 합니다.")
+
+    if not isinstance(image_paths, list):
+        raise ValueError("imagePaths는 배열이어야 합니다.")
+
+    if not all(isinstance(path, str) for path in image_paths):
+        raise ValueError("이미지 경로는 문자열이어야 합니다.")
+
+    return analyze_ad(
+        copy=copy,
+        image_paths=image_paths,
+        video_path=optional_text(data, "videoPath"),
+        video_url=optional_text(data, "videoUrl"),
+    )
+
+
 # Express 연동용 실행 함수
 def main():
 
@@ -19,27 +52,8 @@ def main():
         raw_input = sys.stdin.read()
         data = json.loads(raw_input)
 
-        # 입력 형식 검증
-        if not isinstance(data, dict):
-            raise ValueError("JSON 객체를 입력해주세요.")
-
-        copy = data.get("copy", "")
-        image_paths = data.get("imagePaths", [])
-
-        if not isinstance(copy, str):
-            raise ValueError("copy는 문자열이어야 합니다.")
-
-        if not isinstance(image_paths, list):
-            raise ValueError("imagePaths는 배열이어야 합니다.")
-
-        if not all(isinstance(path, str) for path in image_paths):
-            raise ValueError("이미지 경로는 문자열이어야 합니다.")
-
         # 광고 분석 실행
-        result = analyze_ad(
-            copy=copy,
-            image_paths=image_paths
-        )
+        result = analyze_request(data)
 
         # 정상 응답 반환
         print(json.dumps({

@@ -262,19 +262,88 @@ function trialLine(trial) {
   return `시험기간 ${label} ${raw}`.trim();
 }
 
+function issueKey(check) {
+  if (check.identity) return `${check.type}:${check.identity}`;
+  return `${check.type}:${String(check.originalText).replace(/\s+/g, "")}`;
+}
+
+function isSameIssue(existing, check) {
+  if (issueKey(existing) !== issueKey(check)) return false;
+  if (existing.testId && check.testId && existing.testId !== check.testId) return false;
+  return true;
+}
+
 function dedupe(checks) {
-  const seen = new Set();
   const unique = [];
   for (const check of checks) {
-    const key = check.identity
-      ? `${check.type}:${check.identity}`
-      : `${check.type}:${String(check.originalText).replace(/\s+/g, "")}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const { identity, ...published } = check;
-    unique.push({ ...published, id: `check${unique.length + 1}` });
+    const existing = unique.find((item) => isSameIssue(item, check));
+    if (existing) {
+      if (!existing.testId && check.testId) existing.testId = check.testId;
+      if (!existing.sourceId && check.sourceId) existing.sourceId = check.sourceId;
+      if (!existing.originalText && check.originalText) existing.originalText = check.originalText;
+      continue;
+    }
+    unique.push({ ...check });
   }
-  return unique;
+  return unique.map((check, index) => {
+    const { identity, ...published } = check;
+    return { ...published, id: `check${index + 1}` };
+  });
+}
+
+function structuredMeta(test) {
+  const meta = {};
+  if (typeof test?.id === "string" && test.id.trim()) meta.testId = test.id.trim();
+  if (typeof test?.sourceId === "string" && test.sourceId.trim()) meta.sourceId = test.sourceId.trim();
+  return meta;
+}
+
+function checksFromStructuredTest(test) {
+  if (!test || typeof test !== "object") return [];
+  const startRaw = typeof test.startDate === "string" ? test.startDate.trim() : "";
+  const endRaw = typeof test.endDate === "string" ? test.endDate.trim() : "";
+  if (!startRaw || !endRaw) return [];
+  const start = parseDate(startRaw);
+  const end = parseDate(endRaw);
+  if (start.status === "unparsed" || end.status === "unparsed") return [];
+
+  const identity = `${dateIdentity(start)}|${dateIdentity(end)}`;
+  const meta = structuredMeta(test);
+  const shown = `${startRaw}~${endRaw}`;
+  if (start.status === "invalid" || end.status === "invalid") {
+    return [makeCheck("INVALID_DATE", "", {
+      identity,
+      ...meta,
+      description: `추출된 시험기간 ${shown}에 달력에 없는 날짜가 있습니다. 광고 원문 또는 문구 인식 결과를 확인해주세요.`,
+    })];
+  }
+  if (end.time < start.time) {
+    return [makeCheck("DATE_INCONSISTENCY", "", {
+      identity,
+      ...meta,
+      start: isoDate(start),
+      end: isoDate(end),
+      description: `추출된 시험 종료일(${endRaw})이 시작일(${startRaw})보다 앞섭니다. 광고 원문 또는 문구 인식 결과일 수 있어 확인이 필요합니다.`,
+    })];
+  }
+
+  const durationText = typeof test.duration === "string" ? test.duration.trim() : "";
+  if (!durationText) return [];
+  const duration = findDurations(`시험기간 ${durationText}`)[0];
+  if (!duration || periodMatches(start, end, duration)) return [];
+  return [makeCheck("PERIOD_MISMATCH", "", {
+    identity,
+    ...meta,
+    start: isoDate(start),
+    end: isoDate(end),
+    description: `추출된 날짜 기준으로 안내된 ${periodLabel(duration)} 시험과 기간이 다릅니다. 확인이 필요합니다.`,
+  })];
+}
+
+function checksFromTestConditions(result) {
+  const tests = result?.ad?.testConditions;
+  if (!Array.isArray(tests)) return [];
+  return tests.flatMap((test) => checksFromStructuredTest(test));
 }
 
 export function trialsFrom(...groups) {
@@ -288,14 +357,22 @@ export function checkConsistency(result) {
   const fromAd = checksFromText(collectText(result));
   const trials = trialsFrom(result?.trials, result?.ad?.trials);
   const fromTrials = checksFromText(trials.map(trialLine).filter(Boolean).join("\n"));
-  return dedupe([...fromAd, ...fromTrials]);
+  const fromStructured = checksFromTestConditions(result);
+  return dedupe([...fromAd, ...fromTrials, ...fromStructured]);
+}
+
+function dateReviewItems(result) {
+  if (!Array.isArray(result?.dateReview)) return [];
+  return result.dateReview.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
 }
 
 export function applyConsistency(result) {
+  const dateReview = dateReviewItems(result);
   try {
     const checks = checkConsistency(result);
     const rest = result && typeof result === "object" ? { ...result } : {};
     delete rest.trials;
+    delete rest.dateReview;
     return { ...rest, consistencyChecks: checks };
   } catch (error) {
     console.error(error instanceof Error ? error.message : "consistency check failed");
@@ -310,6 +387,10 @@ export function applyConsistency(result) {
       }
     }
     safe.consistencyChecks = [unavailableCheck()];
+    if (dateReview.length > 0) {
+      const current = Array.isArray(safe.checkBeforeBuy) ? safe.checkBeforeBuy : [];
+      safe.checkBeforeBuy = [...current, ...dateReview.filter((item) => !current.includes(item))];
+    }
     return safe;
   }
 }
