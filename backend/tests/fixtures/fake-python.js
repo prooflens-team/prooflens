@@ -45,7 +45,7 @@ process.stdin.on("end", () => {
   if (mode === "youtube-access") {
     process.stdout.write(JSON.stringify({
       success: false,
-      error: "YouTube 영상에 접근하거나 분석할 수 없습니다. 공개 여부와 URL을 확인하거나 MP4 파일을 업로드해주세요.",
+      error: "YouTube 영상에 접근하거나 분석할 수 없습니다. 공개 여부와 URL을 확인하거나, 광고 문구 또는 이용 권한이 있는 스크린샷을 보내 주세요.",
     }));
     process.exit(1);
   }
@@ -91,8 +91,14 @@ process.stdin.on("end", () => {
 
   const hasImages = Array.isArray(input.imagePaths) && input.imagePaths.length > 0;
   const hasVideoUrl = typeof input.videoUrl === "string" && input.videoUrl.length > 0;
-  const hasVideoPath = typeof input.videoPath === "string" && input.videoPath.length > 0;
-  const hasVideo = hasVideoUrl || hasVideoPath;
+  if (typeof input.videoPath === "string" && input.videoPath.length > 0) {
+    process.stdout.write(JSON.stringify({
+      success: false,
+      error: "영상 파일 업로드는 지원하지 않습니다. 광고 문구를 직접 입력하거나 이용 권한이 있는 스크린샷을 올려 주세요.",
+    }));
+    return;
+  }
+  const hasVideo = hasVideoUrl;
   const claims = mode === "empty-claims" || (!input.copy && !hasImages && !hasVideo)
     ? []
     : [hasVideo
@@ -115,7 +121,7 @@ process.stdin.on("end", () => {
 
   const ad = {
     title: "테스트 광고",
-    platform: hasVideoUrl ? "YouTube" : hasVideoPath ? "영상 업로드" : "직접 입력",
+    platform: hasVideoUrl ? "YouTube" : "직접 입력",
     copy: input.copy || "",
     productName: "",
     category: "크림",

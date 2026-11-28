@@ -231,15 +231,18 @@ def analyze_ad(
 
     image_paths = image_paths or []
 
-    if not copy.strip() and not image_paths and not video_path and not video_url:
+    if video_path:
+        raise ValueError(
+            "영상 파일 업로드는 지원하지 않습니다. "
+            "광고 문구를 직접 입력하거나 이용 권한이 있는 스크린샷을 올려 주세요."
+        )
+
+    if not copy.strip() and not image_paths and not video_url:
         raise ValueError(
             "광고 문구, 이미지 또는 영상 중 하나 이상을 입력해주세요."
         )
 
-    if video_path and video_url:
-        raise ValueError("MP4 파일과 YouTube URL은 동시에 입력할 수 없습니다.")
-
-    if (video_path or video_url) and (copy.strip() or image_paths):
+    if video_url and (copy.strip() or image_paths):
         raise ValueError(
             "영상은 문구 및 이미지와 별도로 분석해주세요."
         )
@@ -300,57 +303,6 @@ def analyze_ad(
             )
         )
 
-    # MP4 광고 영상 추가
-    if video_path:
-
-        path = Path(video_path)
-
-        if not path.is_absolute():
-            path = BASE_DIR / path
-
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"영상을 찾을 수 없습니다: {path}"
-            )
-
-        if path.suffix.lower() != ".mp4":
-            raise ValueError(
-                "MP4 영상만 지원합니다."
-            )
-
-        file_size = path.stat().st_size
-
-        if file_size == 0:
-            raise ValueError(
-                "영상 파일이 비어 있습니다."
-            )
-
-        max_video_size = 10 * 1024 * 1024
-
-        if file_size > max_video_size:
-            raise ValueError(
-                "영상 파일 크기는 10MB 이하여야 합니다."
-            )
-
-        valid_source_ids.add("video1")
-
-        contents.append(
-            "[출처 ID: video1]\n"
-            "다음 광고 영상의 음성, 화면 자막, "
-            "제품 정보, 시험 정보 및 효능 주장을 "
-            "종합적으로 분석해주세요. "
-            "확인 가능한 등장 시간도 기록해주세요."
-        )
-
-        contents.append(
-            types.Part.from_bytes(
-                data=path.read_bytes(),
-                mime_type="video/mp4"
-            )
-        )
-
-
-
     # YouTube 영상 및 Shorts URL 추가
     if video_url:
         normalized_url = normalize_youtube_url(video_url)
@@ -389,7 +341,8 @@ def analyze_ad(
             raise RuntimeError(
                 "YouTube 영상 또는 AI API에 대한 접근 권한이 없습니다. "
                 "영상의 공개 여부와 URL, API 접근 권한을 확인해주세요. "
-                "영상 접근이 불가능한 경우 MP4 파일을 업로드해주세요."
+                "영상 접근이 불가능한 경우 광고 문구를 직접 입력하거나 "
+                "이용 권한이 있는 스크린샷을 올려 주세요."
             )from e
 
         elif e.code in (401, 403):
@@ -400,7 +353,8 @@ def analyze_ad(
         elif video_url and e.code in (400, 404):
             raise RuntimeError(
                 "YouTube 영상에 접근하거나 분석할 수 없습니다. "
-                "공개 여부와 URL을 확인하거나 MP4 파일을 업로드해주세요."
+                "공개 여부와 URL을 확인하거나, 광고 문구 또는 "
+                "이용 권한이 있는 스크린샷을 보내 주세요."
             ) from e
 
         elif e.code == 400:
@@ -450,8 +404,7 @@ def analyze_ad(
         "%Y-%m-%d %H:%M:%S"
     )
 
-    ad["platform"] = ("YouTube" if video_url else
-                      "영상 업로드" if video_path else "직접 입력")
+    ad["platform"] = "YouTube" if video_url else "직접 입력"
 
     # 출처 및 시험 ID 검증
     result = validate_references(
@@ -482,8 +435,7 @@ if __name__ == "__main__":
         print("1. 광고 문구 분석")
         print("2. 광고 이미지 분석")
         print("3. 광고 문구 + 이미지 분석")
-        print("4. MP4 영상 분석")
-        print("5. YouTube / Shorts URL 분석")
+        print("4. YouTube / Shorts URL 분석")
 
         mode = input("분석 방식을 선택하세요: ")
 
@@ -508,10 +460,6 @@ if __name__ == "__main__":
             )
 
         elif mode == "4":
-            video_path = input("MP4 영상 경로를 입력하세요: ")
-            result = analyze_ad(video_path=video_path)
-
-        elif mode == "5":
             video_url = input("YouTube 영상 URL을 입력하세요: ")
             result = analyze_ad(video_url=video_url)
 

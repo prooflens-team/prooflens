@@ -54,45 +54,6 @@ export function collectFiles(files) {
   return Object.values(files).flat().filter(Boolean);
 }
 
-export function detectMp4(buffer, fileSize = buffer?.length ?? 0) {
-  if (!buffer || buffer.length < 12 || fileSize < 12) return false;
-  if (buffer.toString("ascii", 4, 8) !== "ftyp") return false;
-  const declared = buffer.readUInt32BE(0);
-  let brandOffset = 8;
-  if (declared === 1) {
-    if (buffer.length < 20 || fileSize < 24) return false;
-    const high = buffer.readUInt32BE(8);
-    const low = buffer.readUInt32BE(12);
-    if (high > 0 || low < 24 || low > fileSize) return false;
-    brandOffset = 16;
-  } else if (declared === 0) {
-    if (fileSize < 16) return false;
-  } else if (declared < 16 || declared > fileSize) {
-    return false;
-  }
-  if (buffer.length < brandOffset + 4) return false;
-  return /^[A-Za-z0-9 ]{4}$/.test(buffer.toString("ascii", brandOffset, brandOffset + 4));
-}
-
-export async function assertMp4(file) {
-  if (!file || file.size === 0) {
-    throw new ApiError(400, "INVALID_VIDEO_FILE", "MP4 영상 파일을 확인하지 못했습니다.");
-  }
-  if (path.extname(file.filename).toLowerCase() !== ".mp4") {
-    throw new ApiError(400, "INVALID_VIDEO_FILE", "MP4 영상 파일만 업로드할 수 있습니다.");
-  }
-  const handle = await fs.open(file.path, "r");
-  try {
-    const buffer = Buffer.alloc(32);
-    const { bytesRead } = await handle.read(buffer, 0, 32, 0);
-    if (!detectMp4(buffer.subarray(0, bytesRead), file.size)) {
-      throw new ApiError(400, "INVALID_VIDEO_FILE", "MP4 영상 파일을 확인하지 못했습니다.");
-    }
-  } finally {
-    await handle.close();
-  }
-}
-
 export async function removeFiles(files = []) {
   await Promise.all(collectFiles(files).map(async (file) => {
     const target = typeof file === "string" ? file : file?.path;

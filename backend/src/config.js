@@ -44,14 +44,10 @@ function count(value, fallback, min) {
 }
 
 export function executionTimeoutMs(config, kind) {
-  const specific = kind === "youtube"
-    ? config.timeoutYoutubeMs
-    : kind === "video"
-      ? config.timeoutVideoMs
-      : config.timeoutTextMs;
+  const specific = kind === "youtube" ? config.timeoutYoutubeMs : config.timeoutTextMs;
   if (specific > 0) return specific;
   if (config.timeoutMs > 0) return config.timeoutMs;
-  return kind === "youtube" || kind === "video" ? 180_000 : 120_000;
+  return kind === "youtube" ? 180_000 : 120_000;
 }
 
 export function queueWaitMs(config) {
@@ -67,7 +63,6 @@ export function loadConfig(env = process.env) {
 
   const maxImageBytes = integer(env.MAX_IMAGE_BYTES, 5 * 1024 * 1024);
   const maxImages = integer(env.MAX_IMAGES, 5);
-  const maxVideoBytes = integer(env.MAX_VIDEO_BYTES, 10 * 1024 * 1024);
 
   return {
     backendRoot,
@@ -77,7 +72,6 @@ export function loadConfig(env = process.env) {
     timeoutMs: optionalInteger(env.ANALYSIS_TIMEOUT_MS),
     timeoutTextMs: optionalInteger(env.ANALYSIS_TIMEOUT_TEXT_MS),
     timeoutYoutubeMs: optionalInteger(env.ANALYSIS_TIMEOUT_YOUTUBE_MS),
-    timeoutVideoMs: optionalInteger(env.ANALYSIS_TIMEOUT_VIDEO_MS),
     maxQueueWaitMs: integer(env.MAX_QUEUE_WAIT_MS, 60_000),
     jobTtlMs: integer(env.JOB_TTL_MS, 30 * 60 * 1000),
     maxJobs: integer(env.MAX_JOBS, 200),
@@ -97,8 +91,7 @@ export function loadConfig(env = process.env) {
       : path.join(backendRoot, "uploads"),
     maxImageBytes,
     maxImages,
-    maxVideoBytes,
-    maxUploadBytes: integer(env.MAX_UPLOAD_BYTES, maxImages * maxImageBytes + maxVideoBytes),
+    maxUploadBytes: integer(env.MAX_UPLOAD_BYTES, maxImages * maxImageBytes),
     maxFields: integer(env.MAX_FORM_FIELDS, 8),
     maxFieldBytes: integer(env.MAX_FIELD_BYTES, 1_000_000),
     pythonBin: env.PYTHON_BIN || defaultPythonBin(),

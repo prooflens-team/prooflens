@@ -24,7 +24,6 @@ function testConfig(uploadDir, extra = {}) {
     timeoutMs: 5_000,
     timeoutTextMs: null,
     timeoutYoutubeMs: null,
-    timeoutVideoMs: null,
     maxImageBytes: 5 * 1024 * 1024,
     maxImages: 5,
     maxConcurrent: 2,

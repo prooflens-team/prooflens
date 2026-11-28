@@ -83,50 +83,24 @@ def test_invalid_youtube_url(url):
         normalize_youtube_url(url)
 
 
-# 11. 존재하지 않는 MP4 파일
-def test_missing_video(tmp_path):
-    with pytest.raises(FileNotFoundError):
-        analyze_ad(
-            video_path=str(tmp_path / "missing.mp4")
-        )
+@pytest.mark.parametrize("video_path", [
+    "missing.mp4",
+    "sample.avi",
+    "empty.mp4",
+    "large.mp4",
+])
+def test_video_file_input_is_rejected_without_calling_the_model(video_path):
+    with patch("ai.ad_analyzer.generate_with_retry") as mocked:
+        with pytest.raises(ValueError, match="지원하지 않습니다"):
+            analyze_ad(video_path=video_path)
+    mocked.assert_not_called()
 
 
-# 12. 지원하지 않는 영상 형식
-def test_invalid_video_format(tmp_path):
-    path = tmp_path / "sample.avi"
-    path.write_bytes(b"test")
-
-    with pytest.raises(ValueError, match="MP4"):
-        analyze_ad(video_path=str(path))
-
-
-# 13. 빈 영상 파일
-def test_empty_video(tmp_path):
-    path = tmp_path / "empty.mp4"
-    path.touch()
-
-    with pytest.raises(ValueError, match="비어"):
-        analyze_ad(video_path=str(path))
-
-
-# 14. 영상 크기 제한
-def test_oversized_video(tmp_path):
-    path = tmp_path / "large.mp4"
-
-    with path.open("wb") as f:
-        f.truncate(10 * 1024 * 1024 + 1)
-
-    with pytest.raises(ValueError, match="10MB"):
-        analyze_ad(video_path=str(path))
-
-
-# 15. MP4와 URL 동시 입력 차단
-def test_multiple_video_inputs():
-    with pytest.raises(ValueError):
-        analyze_ad(
-            video_path="sample.mp4",
-            video_url=WATCH_URL
-        )
+def test_video_file_with_youtube_url_is_rejected():
+    with patch("ai.ad_analyzer.generate_with_retry") as mocked:
+        with pytest.raises(ValueError, match="지원하지 않습니다"):
+            analyze_ad(video_path="sample.mp4", video_url=WATCH_URL)
+    mocked.assert_not_called()
 
 
 # 16. 영상과 광고 문구 동시 입력 차단
@@ -145,25 +119,6 @@ def test_video_with_image():
             image_paths=["sample.png"],
             video_url=WATCH_URL
         )
-
-
-# 18. MP4 영상 분석 성공
-def test_mp4_analysis(tmp_path):
-    path = tmp_path / "sample.mp4"
-    path.write_bytes(b"mock video content")
-
-    with patch(
-        "ai.ad_analyzer.generate_with_retry",
-        return_value=make_video_response()
-    ) as mocked:
-        result = analyze_ad(video_path=str(path))
-
-    mocked.assert_called_once()
-
-    assert result["ad"]["platform"] == "영상 업로드"
-    assert result["claims"][0]["id"] == "c1"
-    assert result["claims"][0]["sourceIds"] == ["video1"]
-    assert result["claims"][0]["timestamps"][0]["startSeconds"] == 1.0
 
 
 # 19. YouTube 영상 분석 성공
@@ -213,7 +168,7 @@ def test_youtube_permission_error():
         "ai.ad_analyzer.generate_with_retry",
         side_effect=error
     ):
-        with pytest.raises(RuntimeError, match="MP4"):
+        with pytest.raises(RuntimeError, match="스크린샷"):
             analyze_ad(video_url=WATCH_URL)
 
 
@@ -248,28 +203,23 @@ def test_run_analysis_maps_video_url(monkeypatch):
 
     assert captured["copy"] == ""
     assert captured["image_paths"] == []
-    assert captured["video_path"] is None
+    assert captured.get("video_path") is None
     assert captured["video_url"] == WATCH_URL
 
 
-def test_run_analysis_maps_video_path(monkeypatch):
-    captured = {}
-
+def test_run_analysis_rejects_video_path(monkeypatch):
     def fake_analyze_ad(**kwargs):
-        captured.update(kwargs)
-        return {"ad": {}, "claims": []}
+        raise AssertionError("videoPath는 분석 함수로 전달되면 안 됩니다.")
 
     monkeypatch.setattr("ai.run_analysis.analyze_ad", fake_analyze_ad)
     from ai.run_analysis import analyze_request
 
-    analyze_request({
-        "copy": "",
-        "imagePaths": [],
-        "videoPath": "/app/uploads/unique-id.mp4",
-    })
-
-    assert captured["video_path"] == "/app/uploads/unique-id.mp4"
-    assert captured["video_url"] is None
+    with pytest.raises(ValueError, match="지원하지 않습니다"):
+        analyze_request({
+            "copy": "",
+            "imagePaths": [],
+            "videoPath": "/app/uploads/unique-id.mp4",
+        })
 
 
 def test_run_analysis_rejects_non_string_video_url():

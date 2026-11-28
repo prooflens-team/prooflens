@@ -32,11 +32,10 @@
 | `url` | string | 선택 | 광고 링크. YouTube·Shorts는 영상 분석으로, 그 외 주소는 기존과 같이 문구·이미지와 함께만 사용 |
 | `copy` | string | 선택 | 사용자가 직접 입력한 광고 문구 |
 | `images` | file[] | 선택 | 광고 스크린샷. PNG·JPEG·WebP, 최대 5장, 장당 5MB |
-| `video` | file | 선택 | MP4 영상 1개, 최대 10MB |
 
-- **링크, 문구, 이미지, 영상 중 하나 이상은 꼭 있어야 합니다.** 프론트에서도 먼저 검사합니다.
+- **링크, 문구, 이미지 중 하나 이상은 꼭 있어야 합니다.** 프론트에서도 먼저 검사합니다.
 - 같은 이름 `images`로 파일을 여러 개 보냅니다.
-- 영상 필드는 `video` 하나이며, 파일명은 서버가 UUID로 바꿉니다. 사용자가 보낸 파일명은 저장 경로로 쓰지 않습니다.
+- `video` 파일 필드는 받지 않습니다. 보내면 `400 INVALID_INPUT`이고, 저장된 임시 파일은 지웁니다. 영상 파일은 Gemini로 넘기지 않습니다.
 
 ### 영상 분석
 
@@ -50,16 +49,7 @@
 
 서버는 위 주소를 `https://www.youtube.com/watch?v=VIDEO_ID`로 맞춘 뒤 Python `videoUrl`로 넘깁니다. 프론트는 기존 `url` 필드를 그대로 쓰면 됩니다.
 
-HTTP YouTube, 영상 ID가 틀린 주소, `youtube.com.evil.com`처럼 YouTube로 위장한 도메인은 `UNSUPPORTED_VIDEO_URL`입니다. Instagram, TikTok, 일반 웹 주소는 영상으로 분석하지 않습니다. 그 주소만 오면 기존처럼 조회 결과에서 `LINK_ACCESS_DENIED`가 됩니다. 일반 주소와 문구 또는 이미지를 함께 보내면 주소는 내려받지 않고 문구·이미지만 분석합니다.
-
-MP4 예시:
-
-```
-POST /api/analyses
-Content-Type: multipart/form-data
-
-video: ad.mp4
-```
+HTTP YouTube, 영상 ID가 틀린 주소, `youtube.com.evil.com`처럼 YouTube로 위장한 도메인은 `UNSUPPORTED_VIDEO_URL`입니다. Instagram, TikTok, 일반 웹 주소는 영상으로 분석하지 않습니다. 그 주소만 오면 기존처럼 조회 결과에서 `LINK_ACCESS_DENIED`가 됩니다. 안내 문구는 광고 문구 직접 입력 또는 이용 권한이 있는 스크린샷 업로드입니다. 화면 녹화, 영상 다운로드, 영상 파일 업로드는 안내하지 않습니다. 일반 주소와 문구 또는 이미지를 함께 보내면 주소는 내려받지 않고 문구·이미지만 분석합니다.
 
 YouTube 예시:
 
@@ -70,11 +60,11 @@ Content-Type: multipart/form-data
 url: https://www.youtube.com/shorts/VIDEO_ID
 ```
 
-영상 제한:
+영상과 이미지 제한:
 
-- MP4 1개, 최대 10MiB(10,485,760 bytes). 빈 파일과 확장자만 `.mp4`인 파일은 거절합니다.
-- 이미지 제한은 그대로입니다. 최대 5장, 장당 5MB.
-- 영상과 문구, 영상과 이미지, YouTube 주소와 MP4, YouTube 주소와 문구 또는 이미지는 `INVALID_INPUT_COMBINATION`입니다.
+- 이미지 최대 5장, 장당 5MiB(5,242,880 bytes). PNG·JPEG·WebP만 받습니다.
+- 파일 내용 합계는 `MAX_UPLOAD_BYTES`(기본 26,214,400 bytes, 5장 × 5MiB)입니다. 이 값은 저장된 파일 바이트 합계이며, multipart 경계와 `url`·`copy` 텍스트는 포함하지 않습니다. 텍스트 필드는 `MAX_FIELD_BYTES`(1,000,000 bytes)로 따로 제한합니다.
+- YouTube 주소와 문구 또는 이미지를 함께 보내면 `INVALID_INPUT_COMBINATION`입니다.
 
 완료된 영상 주장에는 광고 안의 재생 위치가 남습니다. `sourceId`는 외부 근거 `sources`와 다릅니다.
 
@@ -107,7 +97,7 @@ url: https://www.youtube.com/shorts/VIDEO_ID
 
 `GET /api/analyses/{analysisId}`
 
-프론트는 **2초마다** 이 주소를 조회합니다. 180초 안에 `completed`나 `failed`가 오지 않으면 프론트에서 시간 초과(`TIMEOUT`) 화면을 띄웁니다. 서버 제한이 길어졌으므로 아래 6절의 권장 시간(문구·이미지 195초, 영상 270초)으로 바꾸는 것이 필요합니다.
+프론트는 **2초마다** 이 주소를 조회합니다. 180초 안에 `completed`나 `failed`가 오지 않으면 프론트에서 시간 초과(`TIMEOUT`) 화면을 띄웁니다. 서버 제한이 길어졌으므로 아래 6절의 권장 시간(문구·이미지 195초, YouTube·Shorts 270초)으로 바꾸는 것이 필요합니다.
 
 ### 응답 공통 형식 `200 OK`
 
@@ -397,13 +387,11 @@ RAG 근거 검증과 별도로, 광고 문장 안의 시험기간만 규칙으�
 
 | 코드 | 언제 | 보내는 곳 | 프론트 화면 |
 |---|---|---|---|
-| `INVALID_INPUT` | 입력이 없거나 형식이 틀림 | ① 요청 응답 (400) | 입력창 아래 안내 문구 |
+| `INVALID_INPUT` | 입력이 없거나 형식이 틀림. `video` 파일 필드도 여기 해당 | ① 요청 응답 (400) | 입력창 아래 안내 문구. 영상 파일은 문구 또는 이용 권한이 있는 스크린샷을 안내 |
 | `UNSUPPORTED_VIDEO_URL` | YouTube로 볼 수 없는 영상 주소 | ① 요청 응답 (400) | 지원하는 YouTube·Shorts 주소만 안내 |
-| `INVALID_VIDEO_FILE` | MP4가 아니거나 비어 있거나 영상이 2개 | ① 요청 응답 (400) | MP4 1개만 안내 |
-| `VIDEO_TOO_LARGE` | 영상이 10MB를 넘음 | ① 요청 응답 (400) | 10MB 이하만 안내 |
-| `INVALID_INPUT_COMBINATION` | 영상을 문구·이미지·다른 영상과 함께 보냄 | ① 요청 응답 (400) | 영상은 따로 보내 달라는 안내 |
-| `LINK_ACCESS_DENIED` | 비공개 게시물, Instagram·TikTok 등 미지원 주소 | ② 조회 응답 `error` | "이 링크는 열 수 없어요" |
-| `YOUTUBE_ACCESS_FAILED` | 공개 YouTube 영상에 접근하지 못함 | ② 조회 응답 `error` | 공개 여부와 URL 확인, 또는 MP4 업로드 안내 |
+| `INVALID_INPUT_COMBINATION` | YouTube 주소를 문구 또는 이미지와 함께 보냄 | ① 요청 응답 (400) | 영상 주소는 따로 보내 달라는 안내 |
+| `LINK_ACCESS_DENIED` | 비공개 게시물, Instagram·TikTok 등 미지원 주소 | ② 조회 응답 `error` | "이 링크는 열 수 없어요". 문구 입력 또는 이용 권한이 있는 스크린샷 안내 |
+| `YOUTUBE_ACCESS_FAILED` | 공개 YouTube 영상에 접근하지 못함 | ② 조회 응답 `error` | 공개 여부와 URL 확인, 또는 문구·스크린샷 안내 |
 | `ANALYSIS_FAILED` | 인증·사용량·서버 오류 등 그 밖의 분석 실패 | ② 조회 응답 `error` | "분석 중 문제가 생겼어요" |
 | `NOT_FOUND` | 없는 analysisId 조회 (404) | ② 조회 응답 | "분석 중 문제가 생겼어요" |
 | `TIMEOUT` | 서버의 실행·대기 제한, 또는 프론트의 180초 타이머 | ② 조회 응답 `error`, 또는 프론트 타이머 | "분석이 너무 오래 걸리고 있어요" |
@@ -429,15 +417,14 @@ YouTube 접근 실패만 `YOUTUBE_ACCESS_FAILED`입니다. Gemini 인증 오류,
 
 서버만 준비된 상태입니다. 화면 코드는 이번 단계에서 바꾸지 않았습니다.
 
-1. 기존 `url` 입력으로 YouTube watch, Shorts, `youtu.be` 주소를 보냅니다.
-2. MP4 1개를 `video` 필드로 보냅니다. 10MB를 넘기 전에 화면에서 막을 수 있습니다.
-3. 영상을 보낼 때는 문구, 이미지, 다른 영상 주소를 함께 보내지 않습니다.
-4. Instagram과 TikTok 주소는 영상 분석 버튼으로 연결하지 않습니다.
-5. `UNSUPPORTED_VIDEO_URL`, `INVALID_VIDEO_FILE`, `VIDEO_TOO_LARGE`, `INVALID_INPUT_COMBINATION`, `YOUTUBE_ACCESS_FAILED` 문구를 화면에 연결합니다.
-6. 주장의 `timestamps`를 재생 위치로 보여 줍니다. `sources`와 섞지 않습니다.
-7. 화면의 180초 제한을 6절의 권장 시간으로 바꿉니다. 조회 간격 2초는 유지합니다.
-8. `RATE_LIMIT_EXCEEDED`와 `QUEUE_FULL`을 일반 실패와 구분하고, 429의 `Retry-After` 뒤에 다시 요청합니다.
-9. 서버가 `failed`와 `TIMEOUT`을 주면 화면 타이머보다 먼저 그 결과를 사용합니다.
+1. 기존 `url` 입력으로 YouTube watch, Shorts, `youtu.be` 주소를 보냅니다. 영상 파일 업로드 화면은 만들지 않습니다.
+2. YouTube 주소를 보낼 때는 문구와 이미지를 함께 보내지 않습니다.
+3. Instagram과 TikTok 주소는 영상 분석으로 연결하지 않습니다. 화면 녹화나 영상 파일 업로드를 권하지 않고, 광고 문구 또는 이용 권한이 있는 스크린샷을 안내합니다.
+4. `UNSUPPORTED_VIDEO_URL`, `INVALID_INPUT_COMBINATION`, `YOUTUBE_ACCESS_FAILED` 문구를 화면에 연결합니다. `video` 필드는 `INVALID_INPUT`입니다.
+5. 주장의 `timestamps`를 재생 위치로 보여 줍니다. `sources`와 섞지 않습니다.
+6. 화면의 180초 제한을 6절의 권장 시간으로 바꿉니다. 조회 간격 2초는 유지합니다.
+7. `RATE_LIMIT_EXCEEDED`와 `QUEUE_FULL`을 일반 실패와 구분하고, 429의 `Retry-After` 뒤에 다시 요청합니다.
+8. 서버가 `failed`와 `TIMEOUT`을 주면 화면 타이머보다 먼저 그 결과를 사용합니다.
 
 ---
 
@@ -453,7 +440,6 @@ YouTube 접근 실패만 `YOUTUBE_ACCESS_FAILED`입니다. Gemini 인증 오류,
 |---|---|---|
 | 문구·이미지·일반 링크 | `ANALYSIS_TIMEOUT_TEXT_MS` | 120초 |
 | YouTube·Shorts | `ANALYSIS_TIMEOUT_YOUTUBE_MS` | 180초 |
-| MP4 | `ANALYSIS_TIMEOUT_VIDEO_MS` | 180초 |
 
 우선순위는 종류별 값, 그다음 `ANALYSIS_TIMEOUT_MS`, 그다음 위 기본값입니다. `ANALYSIS_TIMEOUT_MS`만 있으면 모든 종류가 그 값을 씁니다. Railway에 55000이 남아 있으면 종류별 변수를 넣기 전까지 55초가 유지됩니다.
 
@@ -464,7 +450,7 @@ YouTube 접근 실패만 `YOUTUBE_ACCESS_FAILED`입니다. Gemini 인증 오류,
 화면 타이머는 업로드, 대기, 실행을 모두 포함합니다. 조회 간격은 2초입니다.
 
 - 문구·이미지·일반 링크: 195초. 업로드 여유 15초, 대기 최대 60초, 실행 120초입니다.
-- YouTube·MP4: 270초. 업로드 여유 30초, 대기 최대 60초, 실행 180초입니다.
+- YouTube·Shorts: 270초. 요청 여유 30초, 대기 최대 60초, 실행 180초입니다.
 
 135초와 195초는 실행 시간에 15초만 더한 값이라, 대기열에 있는 동안 화면이 먼저 끊기고 서버는 Gemini 호출을 계속할 수 있습니다. 그래서 195초와 270초를 권장합니다. 화면 코드는 현재 180초입니다.
 
@@ -491,7 +477,7 @@ Railway는 프록시가 한 단이므로 `TRUST_PROXY_HOPS=1`입니다. 사용�
 
 기본값은 재사용하지 않습니다. `REUSE_IN_PROGRESS_ANALYSIS=false`입니다. 같은 IP가 같은 사용자는 아니고, 공용 네트워크에서 분석 ID를 나누면 다른 사람의 진행 상황을 볼 수 있습니다. 계정처럼 사용자를 구분하는 값이 생기기 전에는 켜지 않습니다.
 
-환경변수를 `true`로 둔 경우에만, 같은 IP에서 진행 중인 분석과 입력이 같으면 기존 `analysisId`를 반환하고 방금 올린 파일은 지웁니다. 해시는 문구, 이미지 바이트와 순서, 정규화된 YouTube 주소, MP4 바이트입니다. 파일명은 보지 않습니다. 완료된 결과는 다시 쓰지 않고, 다른 IP와는 공유하지 않습니다. 이 옵션을 켜도 공용 IP에서는 같은 광고를 낸 다른 사람이 진행 중인 ID를 받을 수 있습니다.
+환경변수를 `true`로 둔 경우에만, 같은 IP에서 진행 중인 분석과 입력이 같으면 기존 `analysisId`를 반환하고 방금 올린 파일은 지웁니다. 해시는 문구, 이미지 바이트와 순서, 정규화된 YouTube 주소입니다. 파일명은 보지 않습니다. 완료된 결과는 다시 쓰지 않고, 다른 IP와는 공유하지 않습니다. 이 옵션을 켜도 공용 IP에서는 같은 광고를 낸 다른 사람이 진행 중인 ID를 받을 수 있습니다.
 
 ### 비용과 업로드
 
@@ -501,6 +487,33 @@ Gemini SDK 재시도는 1회이고, 500·502·503·504만 애플리케이션에�
 
 `GEMINI_API_KEY`는 프로세스에 이미 있으면 `.env`가 덮어쓰지 않습니다. 값이 `test-not-used`이면 Python을 띄우기 전에 빼서 프로젝트 `.env`를 읽게 합니다. 키 값은 로그에 남기지 않습니다.
 
-MP4는 `ftyp`와 브랜드, 첫 박스 크기가 파일 안에 들어가는지를 확인합니다. 확장자와 MIME만으로는 통과하지 못합니다. 영상 프레임을 디코딩하지는 않으므로, 헤더와 박스 크기만 맞는 손상 파일은 통과할 수 있습니다. 이미지와 영상을 합친 업로드 한도는 `MAX_UPLOAD_BYTES`입니다.
+이미지는 시그니처로 확인합니다. 확장자와 MIME만으로는 통과하지 못합니다. 파일 내용 합계 한도는 `MAX_UPLOAD_BYTES`(기본 26,214,400 bytes)입니다. `video`처럼 허용하지 않은 파일 필드는 `400 INVALID_INPUT`으로 거절하고 임시 파일을 지웁니다.
+
+### 최종 Railway 환경변수
+
+종류별 제한을 쓰려면 아래 값을 넣습니다. `ANALYSIS_TIMEOUT_MS=55000`이 남아 있고 종류별 값이 없으면 모든 분석이 55초입니다. 키와 데이터베이스 주소는 기존 값을 유지합니다.
+
+| 환경변수 | 값 |
+|---|---|
+| `ANALYSIS_TIMEOUT_TEXT_MS` | `120000` |
+| `ANALYSIS_TIMEOUT_YOUTUBE_MS` | `180000` |
+| `MAX_QUEUE_WAIT_MS` | `60000` |
+| `MAX_QUEUED_ANALYSES` | `10` |
+| `MAX_CONCURRENT_ANALYSES` | `2` |
+| `MAX_CONCURRENT_PER_IP` | `2` |
+| `MAX_ANALYSIS_CLAIMS` | `20` |
+| `RATE_LIMIT_PER_IP` | `5` |
+| `RATE_LIMIT_WINDOW_MS` | `60000` |
+| `RATE_LIMIT_GLOBAL_PER_HOUR` | `60` |
+| `RATE_LIMIT_GLOBAL_WINDOW_MS` | `3600000` |
+| `RATE_LIMIT_POLL_PER_MINUTE` | `120` |
+| `TRUST_PROXY_HOPS` | `1` |
+| `REUSE_IN_PROGRESS_ANALYSIS` | `false` |
+| `PROOFLENS_API_LOG` | `0` |
+| `MAX_IMAGE_BYTES` | `5242880` |
+| `MAX_IMAGES` | `5` |
+| `MAX_UPLOAD_BYTES` | `26214400` |
+
+`ANALYSIS_TIMEOUT_VIDEO_MS`와 `MAX_VIDEO_BYTES`는 사용하지 않습니다. 배포 환경에 남아 있어도 서버가 읽지 않습니다.
 
 단계 로그는 `analysisId`, `inputType`, `stage`, `elapsedMs`, `ok`만 남깁니다. 단계는 `validate`, `queue`, `analysis`, `evidence`, `consistency`, `finalize`, `total`입니다. 광고 문구, 주소, 파일 경로, API 키는 넣지 않습니다. 주장이 없으면 `evidence` 단계는 없습니다. `PROOFLENS_API_LOG=1`일 때만 생성 API와 임베딩 API 호출 횟수를 같은 형식의 한 줄로 남깁니다. 기본값은 꺼져 있습니다.

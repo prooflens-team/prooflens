@@ -13,7 +13,6 @@ Gemini API를 활용하여 SNS 광고의 문구, 이미지 및 영상에서 제�
 - 동일 제품의 다중 이미지 분석(최대 5장)
 - 텍스트와 이미지 복합 분석
 - YouTube 및 YouTube Shorts URL 직접 분석
-- MP4 영상 파일 직접 분석(최대 10MiB)
 - 영상 속 음성 및 화면 자막 기반 광고 정보 추출
 - 영상 내 광고 주장 등장 시점 추출
 
@@ -100,8 +99,7 @@ python -m ai.ad_analyzer
 1. 광고 문구 분석
 2. 광고 이미지 분석
 3. 광고 문구 및 이미지 분석
-4. MP4 영상 분석
-5. YouTube 및 Shorts URL 분석
+4. YouTube 및 Shorts URL 분석
 
 ### Python 함수 호출 방식
 
@@ -122,11 +120,6 @@ result = analyze_ad(
     image_paths=["image1.png"]
 )
 
-# MP4 영상 분석
-result = analyze_ad(
-    video_path="tests/videos/sample_ad.mp4"
-)
-
 # YouTube 영상 분석
 result = analyze_ad(
     video_url="https://www.youtube.com/watch?v=l1F5ysUC0aA"
@@ -141,16 +134,14 @@ result = analyze_ad(
 | ----------- | --------- | ----------------------- |
 | copy        | str       | 광고 문구               |
 | image_paths | list[str] | 광고 이미지 파일 경로   |
-| video_path  | str       | MP4 영상 파일 경로      |
 | video_url   | str       | YouTube 또는 Shorts URL |
 
 - 텍스트와 이미지는 함께 입력할 수 있습니다.
-- 영상 파일과 영상 URL은 동시에 입력할 수 없습니다.
-- 영상은 텍스트 및 이미지와 별도로 분석합니다.
-- 이미지 입력은 최대 5장까지 지원합니다.
-- 영상 파일은 최대 10MiB의 MP4 파일을 지원합니다.
+- YouTube 주소는 텍스트 및 이미지와 별도로 분석합니다.
+- 이미지 입력은 최대 5장, 장당 5MiB까지 지원합니다.
+- `video_path`와 JSON `videoPath`는 받지 않습니다. 값이 있으면 모델을 호출하지 않고 입력 오류를 반환합니다.
 
-백엔드 API에서 JSON의 `imagePaths`, `videoPath`, `videoUrl` 등의 입력값을 사용할 경우 Python 함수의 파라미터명으로 매핑해야 합니다.
+백엔드 API에서 JSON의 `imagePaths`, `videoUrl`은 Python 함수의 파라미터명으로 매핑합니다.
 
 ### 출력 JSON 예시
 
@@ -231,7 +222,7 @@ RAG 모듈에 분석 결과를 전달할 때 `testConditions`, `sourceIds`, `tes
 - 재시도 대기 시간: 2초
 - 재시도 대상: HTTP 500, 502, 503, 504
 - API 요청 한도 초과 및 인증 오류 처리
-- YouTube 접근 실패 시 MP4 직접 입력 안내
+- YouTube 접근 실패 시 광고 문구 또는 이용 권한이 있는 스크린샷 안내
 - 잘못된 JSON 응답 및 출처 ID 검증
 
 재시도 로그는 표준 오류 출력(stderr)을 사용합니다.
@@ -256,7 +247,6 @@ RAG 모듈에 분석 결과를 전달할 때 `testConditions`, `sourceIds`, `tes
 
 | 입력 방식 | 기본 해상도 | HIGH 해상도 |
 | --------- | ----------: | ----------: |
-| MP4       |  2/7(28.6%) |   7/7(100%) |
 | YouTube   |  3/7(42.9%) |   7/7(100%) |
 
 동일 이미지 2장에 대한 별도 비교에서는 기본 해상도와 HIGH 해상도의 구조화된 추출 결과가 동일하였습니다.
@@ -269,7 +259,6 @@ RAG 모듈에 분석 결과를 전달할 때 `testConditions`, `sourceIds`, `tes
 | ------------------------ | --------: |
 | 이미지 2장(HIGH)         |    4.05초 |
 | YouTube 영상(HIGH)       |    4.91초 |
-| MP4 영상(HIGH)           |   14.91초 |
 | Shorts 영상(재시도 포함) |   17.38초 |
 
 측정된 성공 사례는 모두 60초 이내에 처리되었습니다.
@@ -299,7 +288,7 @@ python -m pytest tests/ -v
 ## 10. 현재 한계 및 향후 개선 사항
 
 - Instagram 릴스 및 TikTok URL 직접 분석 미지원
-- 접근 제한이 있는 SNS 영상은 MP4 직접 입력 방식으로 대체 가능
+- 지원하지 않는 주소는 광고 문구 직접 입력 또는 이용 권한이 있는 스크린샷으로 대체
 - 실제 비공개 및 삭제 영상에 대한 추가 예외 처리 검증 필요
 - 영상 음성 단독 인식 정확도 검증 필요
 - 영상 타임스탬프와 실제 발화 시점의 일치 여부 검증 필요

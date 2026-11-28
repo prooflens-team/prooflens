@@ -12,20 +12,10 @@ const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "fixt
 const directories = [];
 const videoId = "abcdefghijk";
 const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
-const maxVideoBytes = 10 * 1024 * 1024;
-
 const png = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
   0x00, 0x00, 0x00, 0x00,
 ]);
-
-function mp4(size = 32) {
-  const buffer = Buffer.alloc(size);
-  buffer.writeUInt32BE(Math.min(size, 0xffffffff), 0);
-  buffer.write("ftyp", 4, "ascii");
-  buffer.write("isom", 8, "ascii");
-  return buffer;
-}
 
 function testConfig(uploadDir, extra = {}) {
   const base = loadConfig();
@@ -35,10 +25,8 @@ function testConfig(uploadDir, extra = {}) {
     timeoutMs: 5_000,
     timeoutTextMs: null,
     timeoutYoutubeMs: null,
-    timeoutVideoMs: null,
     maxImageBytes: 5 * 1024 * 1024,
     maxImages: 5,
-    maxVideoBytes,
     maxConcurrent: 2,
     maxConcurrentPerIp: 10,
     maxQueued: 10,
@@ -66,10 +54,6 @@ async function waitFor(app, id) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("분석 상태가 끝나지 않았습니다.");
-}
-
-function attachVideo(builder, buffer, filename = "ad.mp4") {
-  return builder.attach("video", buffer, { filename, contentType: "video/mp4" });
 }
 
 before(() => {
@@ -101,6 +85,9 @@ test("youtube watch, shorts, and youtu.be urls are normalized", async () => {
     assert.equal(sent.copy, "");
     assert.deepEqual(sent.imagePaths, []);
     assert.equal(sent.videoPath, undefined);
+    assert.deepEqual(done.body.result.claims[0].timestamps, [
+      { sourceId: "video1", startSeconds: 1.5, endSeconds: 4.2 },
+    ]);
   }
 });
 
@@ -138,95 +125,37 @@ test("instagram and tiktok urls stay unsupported links", async () => {
   }
 });
 
-test("a valid mp4 upload completes and keeps video timestamps", async () => {
-  const uploadDir = await fs.mkdtemp(path.join(os.tmpdir(), "prooflens-video-"));
-  directories.push(uploadDir);
-  const { app } = await makeApp({
-    pythonEnv: { MOCK_INPUT_FILE: path.join(uploadDir, "input.json") },
-  }, uploadDir);
-  const created = await attachVideo(request(app).post("/api/analyses"), mp4());
-  assert.equal(created.status, 202);
-  const done = await waitFor(app, created.body.analysisId);
-  assert.equal(done.body.status, "completed");
-  assert.equal(done.body.step, "report");
-  assert.equal(done.body.error, null);
-  assert.equal(done.body.result.ad.platform, "영상 업로드");
-  assert.equal(done.body.result.ad.brandName, "테스트 브랜드");
-  assert.deepEqual(done.body.result.claims[0].timestamps, [
-    { sourceId: "video1", startSeconds: 1.5, endSeconds: 4.2 },
-  ]);
-  const sent = JSON.parse(await fs.readFile(path.join(uploadDir, "input.json"), "utf8"));
-  assert.equal(sent.copy, "");
-  assert.deepEqual(sent.imagePaths, []);
-  assert.match(sent.videoPath, /\.mp4$/);
-  assert.notEqual(path.basename(sent.videoPath), "ad.mp4");
-  assert.equal(sent.videoUrl, undefined);
-  assert.deepEqual(await fs.readdir(uploadDir), ["input.json"]);
-});
-
-test("an mp4 at the size limit is accepted and one byte over is rejected", async () => {
-  const { app: allowedApp, uploadDir } = await makeApp();
-  const allowed = await attachVideo(request(allowedApp).post("/api/analyses"), mp4(maxVideoBytes));
-  assert.equal(allowed.status, 202);
-  const done = await waitFor(allowedApp, allowed.body.analysisId);
-  assert.equal(done.body.status, "completed");
-  assert.deepEqual(await fs.readdir(uploadDir), []);
-
-  const { app: blockedApp, uploadDir: blockedDir } = await makeApp();
-  const blocked = await attachVideo(
-    request(blockedApp).post("/api/analyses"),
-    mp4(maxVideoBytes + 1),
-    "big.mp4",
-  );
-  assert.equal(blocked.status, 400);
-  assert.equal(blocked.body.error.code, "VIDEO_TOO_LARGE");
-  assert.deepEqual(await fs.readdir(blockedDir), []);
-});
-
-test("an empty or disguised mp4 is rejected", async () => {
+test("an uploaded video file is rejected and removed", async () => {
   const { app, uploadDir } = await makeApp();
-  const empty = await attachVideo(request(app).post("/api/analyses"), Buffer.alloc(0), "empty.mp4");
-  assert.equal(empty.status, 400);
-  assert.equal(empty.body.error.code, "INVALID_VIDEO_FILE");
-
-  const disguised = await request(app)
-    .post("/api/analyses")
-    .attach("video", png, { filename: "clip.mp4", contentType: "video/mp4" });
-  assert.equal(disguised.status, 400);
-  assert.equal(disguised.body.error.code, "INVALID_VIDEO_FILE");
-  assert.deepEqual(await fs.readdir(uploadDir), []);
-});
-
-test("an mp4 whose box size does not fit the file is rejected", async () => {
-  const { app, uploadDir } = await makeApp();
-  const truncated = Buffer.alloc(32);
-  truncated.writeUInt32BE(10_000, 0);
-  truncated.write("ftyp", 4, "ascii");
-  truncated.write("isom", 8, "ascii");
-  const response = await attachVideo(request(app).post("/api/analyses"), truncated, "broken.mp4");
-  assert.equal(response.status, 400);
-  assert.equal(response.body.error.code, "INVALID_VIDEO_FILE");
-  assert.deepEqual(await fs.readdir(uploadDir), []);
-});
-
-test("two videos are rejected", async () => {
-  const { app, uploadDir } = await makeApp();
-  const response = await attachVideo(attachVideo(request(app).post("/api/analyses"), mp4(), "one.mp4"), mp4(), "two.mp4");
-  assert.equal(response.status, 400);
-  assert.equal(response.body.error.code, "INVALID_VIDEO_FILE");
-  assert.deepEqual(await fs.readdir(uploadDir), []);
-});
-
-test("video cannot be combined with images, copy, or a youtube url", async () => {
-  const { app, uploadDir } = await makeApp();
-  const withImage = await attachVideo(request(app).post("/api/analyses"), mp4())
-    .attach("images", png, { filename: "ad.png", contentType: "image/png" });
-  const withCopy = await attachVideo(request(app).post("/api/analyses"), mp4()).field("copy", "자극 없음");
-  const withUrl = await attachVideo(request(app).post("/api/analyses"), mp4()).field("url", watchUrl);
-  for (const response of [withImage, withCopy, withUrl]) {
+  const samples = [
+    Buffer.from("not-a-video"),
+    Buffer.from([0]),
+    png,
+    Buffer.alloc(6 * 1024 * 1024),
+  ];
+  for (const sample of samples) {
+    const response = await request(app)
+      .post("/api/analyses")
+      .attach("video", sample, { filename: "ad.mp4", contentType: "video/mp4" });
     assert.equal(response.status, 400);
-    assert.equal(response.body.error.code, "INVALID_INPUT_COMBINATION");
+    assert.equal(response.body.error.code, "INVALID_INPUT");
+    assert.match(response.body.error.message, /지원하지 않습니다/);
+    assert.equal(response.body.analysisId, undefined);
   }
+  const withCopy = await request(app)
+    .post("/api/analyses")
+    .field("copy", "자극 없음")
+    .attach("video", Buffer.from("clip"), { filename: "ad.mp4", contentType: "video/mp4" });
+  assert.equal(withCopy.status, 400);
+  assert.equal(withCopy.body.error.code, "INVALID_INPUT");
+
+  const withPath = await request(app)
+    .post("/api/analyses")
+    .field("copy", "자극 없음")
+    .field("videoPath", "C:\\uploads\\ad.mp4");
+  assert.equal(withPath.status, 400);
+  assert.equal(withPath.body.error.code, "INVALID_INPUT");
+  assert.match(withPath.body.error.message, /지원하지 않습니다/);
   assert.deepEqual(await fs.readdir(uploadDir), []);
 });
 
@@ -281,32 +210,22 @@ test("youtube access failure is distinct from quota and timeout", async () => {
   assert.match(quotaDone.body.error.message, /한도/);
 });
 
-test("a failed video analysis deletes the temporary file", async () => {
-  const { app, uploadDir } = await makeApp({ pythonEnv: { MOCK_PYTHON_MODE: "fail-json" } });
-  const created = await attachVideo(request(app).post("/api/analyses"), mp4());
-  const done = await waitFor(app, created.body.analysisId);
-  assert.equal(done.body.status, "failed");
-  assert.equal(done.body.error.code, "ANALYSIS_FAILED");
-  assert.deepEqual(await fs.readdir(uploadDir), []);
-});
-
-test("a timed out video analysis deletes the temporary file", async () => {
-  const uploadDir = await fs.mkdtemp(path.join(os.tmpdir(), "prooflens-video-"));
-  directories.push(uploadDir);
-  const { app } = await makeApp({
-    pythonEnv: { MOCK_PYTHON_MODE: "hang", MOCK_PID_FILE: path.join(uploadDir, "pid.txt") },
-    timeoutMs: 400,
-  }, uploadDir);
-  const created = await attachVideo(request(app).post("/api/analyses"), mp4());
+test("a timed out youtube analysis removes nothing the user uploaded", async () => {
+  const { app, uploadDir } = await makeApp({
+    pythonEnv: { MOCK_PYTHON_MODE: "hang" },
+    timeoutYoutubeMs: 400,
+    timeoutTextMs: 8_000,
+    timeoutMs: 8_000,
+  });
+  const created = await request(app).post("/api/analyses").field("url", watchUrl);
   const done = await waitFor(app, created.body.analysisId);
   assert.equal(done.body.status, "failed");
   assert.equal(done.body.error.code, "TIMEOUT");
   assert.match(done.body.error.message, /제한 시간/);
-  const names = await fs.readdir(uploadDir);
-  assert.deepEqual(names.filter((name) => name.endsWith(".mp4")), []);
+  assert.deepEqual(await fs.readdir(uploadDir), []);
 });
 
-test("a video rejected by a full queue is deleted", async () => {
+test("a full queue rejects another image and deletes that upload", async () => {
   const { app, uploadDir } = await makeApp({
     pythonEnv: { MOCK_PYTHON_MODE: "hang" },
     maxJobs: 1,
@@ -315,7 +234,9 @@ test("a video rejected by a full queue is deleted", async () => {
   });
   const first = await request(app).post("/api/analyses").field("copy", "대기 중");
   assert.equal(first.status, 202);
-  const second = await attachVideo(request(app).post("/api/analyses"), mp4());
+  const second = await request(app)
+    .post("/api/analyses")
+    .attach("images", png, { filename: "late.png", contentType: "image/png" });
   assert.equal(second.status, 503);
   assert.equal(second.body.error.code, "ANALYSIS_FAILED");
   assert.deepEqual(await fs.readdir(uploadDir), []);

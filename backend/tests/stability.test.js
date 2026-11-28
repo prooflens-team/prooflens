@@ -6,9 +6,9 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import request from "supertest";
 import { createApp } from "../src/app.js";
+import { createJobStore } from "../src/jobs/store.js";
 import { executionTimeoutMs, loadConfig, queueWaitMs } from "../src/config.js";
 import { fingerprintInput } from "../src/fingerprint.js";
-import { detectMp4 } from "../src/images.js";
 import { buildPythonEnv } from "../src/analysisService.js";
 import { createRateLimiter } from "../src/rateLimit.js";
 
@@ -31,11 +31,9 @@ function testConfig(uploadDir, extra = {}) {
     timeoutMs: 5_000,
     timeoutTextMs: null,
     timeoutYoutubeMs: null,
-    timeoutVideoMs: null,
     maxQueueWaitMs: 60_000,
     maxImageBytes: 5 * 1024 * 1024,
     maxImages: 5,
-    maxVideoBytes: 10 * 1024 * 1024,
     maxConcurrent: 2,
     maxConcurrentPerIp: 10,
     maxQueued: 10,
@@ -73,14 +71,6 @@ async function waitFor(app, id) {
   throw new Error("분석 상태가 끝나지 않았습니다.");
 }
 
-function mp4(size = 32) {
-  const buffer = Buffer.alloc(size);
-  buffer.writeUInt32BE(size, 0);
-  buffer.write("ftyp", 4, "ascii");
-  buffer.write("isom", 8, "ascii");
-  return buffer;
-}
-
 after(async () => {
   await Promise.all(directories.map((directory) => fs.rm(directory, { recursive: true, force: true })));
 });
@@ -89,12 +79,10 @@ test("type specific timeouts override the shared timeout and then the defaults",
   assert.equal(executionTimeoutMs(loadConfig({}), "text"), 120_000);
   assert.equal(executionTimeoutMs(loadConfig({}), "link"), 120_000);
   assert.equal(executionTimeoutMs(loadConfig({}), "youtube"), 180_000);
-  assert.equal(executionTimeoutMs(loadConfig({}), "video"), 180_000);
 
   const shared = loadConfig({ ANALYSIS_TIMEOUT_MS: "55000" });
   assert.equal(executionTimeoutMs(shared, "text"), 55_000);
   assert.equal(executionTimeoutMs(shared, "youtube"), 55_000);
-  assert.equal(executionTimeoutMs(shared, "video"), 55_000);
 
   const mixed = loadConfig({
     ANALYSIS_TIMEOUT_MS: "55000",
@@ -103,7 +91,6 @@ test("type specific timeouts override the shared timeout and then the defaults",
   });
   assert.equal(executionTimeoutMs(mixed, "text"), 120_000);
   assert.equal(executionTimeoutMs(mixed, "youtube"), 180_000);
-  assert.equal(executionTimeoutMs(mixed, "video"), 55_000);
   assert.equal(queueWaitMs(loadConfig({ MAX_QUEUE_WAIT_MS: "15000" })), 15_000);
 });
 
@@ -171,18 +158,7 @@ test("fingerprint uses file bytes and youtube url, not file names", async () => 
   assert.notEqual(videoA, videoB);
 });
 
-test("mp4 box size must fit the file and the ftyp brand must stay readable", () => {
-  assert.equal(detectMp4(mp4(32), 32), true);
-  const tooSmall = mp4(32);
-  tooSmall.writeUInt32BE(8, 0);
-  assert.equal(detectMp4(tooSmall, 32), false);
-  const tooLarge = mp4(32);
-  tooLarge.writeUInt32BE(1_000, 0);
-  assert.equal(detectMp4(tooLarge, 32), false);
-  assert.equal(detectMp4(png, png.length), false);
-});
-
-test("text, youtube, and mp4 jobs use their own execution limits", async () => {
+test("text and youtube jobs use their own execution limits", async () => {
   const text = await makeApp({
     pythonEnv: { MOCK_PYTHON_MODE: "hang" },
     timeoutTextMs: 250,
@@ -209,28 +185,13 @@ test("text, youtube, and mp4 jobs use their own execution limits", async () => {
   const youtubeDone = await waitFor(youtube.app, youtubeCreated.body.analysisId);
   assert.equal(youtubeDone.body.error.code, "TIMEOUT");
   assert.ok(Date.now() - youtubeStarted < 4_500);
-
-  const video = await makeApp({
-    pythonEnv: { MOCK_PYTHON_MODE: "hang" },
-    timeoutVideoMs: 250,
-    timeoutTextMs: 8_000,
-  });
-  const videoStarted = Date.now();
-  const videoCreated = await request(video.app)
-    .post("/api/analyses")
-    .attach("video", mp4(), { filename: "ad.mp4", contentType: "video/mp4" });
-  const videoDone = await waitFor(video.app, videoCreated.body.analysisId);
-  assert.equal(videoDone.body.error.code, "TIMEOUT");
-  assert.equal((await fs.readdir(video.uploadDir)).some((name) => name.endsWith(".mp4")), false);
-  assert.ok(Date.now() - videoStarted < 4_500);
 });
 
-test("a text job does not inherit the shorter video limit", async () => {
+test("a text job does not inherit the shorter youtube limit", async () => {
   const { app } = await makeApp({
     pythonEnv: { MOCK_PYTHON_MODE: "hang" },
     timeoutTextMs: 3_500,
     timeoutYoutubeMs: 200,
-    timeoutVideoMs: 200,
     timeoutMs: 200,
   });
   const started = Date.now();
@@ -264,18 +225,75 @@ test("queue wait is separate from execution and deletes the waiting upload", asy
 });
 
 test("a processing job is not removed by ttl", async () => {
+  let now = 1_000_000;
   const { app } = await makeApp({
     pythonEnv: { MOCK_PYTHON_MODE: "hang" },
     jobTtlMs: 40,
     timeoutTextMs: 1_200,
+    now: () => now,
   });
   const created = await request(app).post("/api/analyses").field("copy", "유지되는 작업");
-  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(created.status, 202);
+  now += 60_000;
   const mid = await request(app).get(`/api/analyses/${created.body.analysisId}`);
   assert.equal(mid.status, 200);
   assert.equal(mid.body.status, "processing");
   const done = await waitFor(app, created.body.analysisId);
+  assert.equal(done.status, 200);
+  assert.equal(done.body.status, "failed");
   assert.equal(done.body.error.code, "TIMEOUT");
+  now += 39;
+  const held = await request(app).get(`/api/analyses/${created.body.analysisId}`);
+  assert.equal(held.status, 200);
+  assert.equal(held.body.error.code, "TIMEOUT");
+  now += 1;
+  const expired = await request(app).get(`/api/analyses/${created.body.analysisId}`);
+  assert.equal(expired.status, 404);
+  assert.equal(expired.body.error.code, "NOT_FOUND");
+});
+
+test("ttl starts at the last update and does not remove processing or waiting jobs", () => {
+  let now = 0;
+  const store = createJobStore({ jobTtlMs: 40, maxJobs: 10, now: () => now });
+  try {
+    const running = store.create("claims");
+    const waiting = store.create("confirm");
+    now = 10_000;
+    assert.equal(store.get(running.analysisId).status, "processing");
+    assert.equal(store.get(waiting.analysisId).status, "processing");
+    store.update(running.analysisId, {
+      status: "failed",
+      error: { code: "TIMEOUT", message: "제한 시간" },
+    });
+    const finishedAt = now;
+    now = finishedAt + 39;
+    assert.equal(store.get(running.analysisId).error.code, "TIMEOUT");
+    now = finishedAt + 40;
+    assert.equal(store.get(running.analysisId), null);
+    assert.equal(store.get(waiting.analysisId).status, "processing");
+  } finally {
+    store.stop();
+  }
+});
+
+test("the stored job cap removes a finished job and keeps a running job", () => {
+  let now = 0;
+  const store = createJobStore({ jobTtlMs: 60_000, maxJobs: 2, now: () => now });
+  try {
+    const finished = store.create();
+    const running = store.create();
+    store.update(finished.analysisId, { status: "completed", result: { claims: [] } });
+    now += 1;
+    const accepted = store.create();
+    assert.ok(accepted);
+    assert.equal(store.get(finished.analysisId), null);
+    assert.equal(store.get(running.analysisId).status, "processing");
+    assert.equal(store.create(), null);
+    assert.equal(store.get(running.analysisId).status, "processing");
+    assert.equal(store.get(accepted.analysisId).status, "processing");
+  } finally {
+    store.stop();
+  }
 });
 
 test("ip and global limits return 429 before another upload is stored", async () => {
@@ -410,7 +428,7 @@ test("the server runs two analyses and rejects the queue when it is full", async
   assert.equal(waiting.status, 202);
   const rejected = await request(full.app)
     .post("/api/analyses")
-    .attach("video", mp4(), { filename: "late.mp4", contentType: "video/mp4" });
+    .attach("images", png, { filename: "late.png", contentType: "image/png" });
   assert.equal(rejected.status, 503);
   assert.equal(rejected.body.error.code, "QUEUE_FULL");
   assert.equal(rejected.headers["retry-after"], "5");

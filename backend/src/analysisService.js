@@ -47,7 +47,7 @@ function logApiCalls(analysisId, stage, stderr) {
 
 function inputFiles(input) {
   const images = input.images ?? input.files ?? [];
-  return [...images, ...(input.videoFile ? [input.videoFile] : [])];
+  return images;
 }
 
 function queueFullError() {
@@ -195,7 +195,7 @@ export function createAnalysisService(config, jobs) {
           result: null,
           error: {
             code: "LINK_ACCESS_DENIED",
-            message: "이 링크의 광고 내용은 바로 가져올 수 없습니다. 광고 화면을 캡처하거나 광고 문구를 직접 입력해 주세요.",
+            message: "이 링크의 광고 내용은 바로 가져올 수 없습니다. 광고 문구를 직접 입력하거나 이용 권한이 있는 스크린샷을 올려 주세요.",
           },
         };
         return;
@@ -207,9 +207,6 @@ export function createAnalysisService(config, jobs) {
         imagePaths: safePaths(config.uploadDir, images),
       };
       if (input.videoUrl) payload.videoUrl = input.videoUrl;
-      if (input.videoFile) {
-        payload.videoPath = safePaths(config.uploadDir, [input.videoFile])[0];
-      }
       const analysisStarted = Date.now();
       const analysis = await runModule(
         config.analysisScript,
@@ -342,7 +339,6 @@ export function createAnalysisService(config, jobs) {
     accept({
       copy,
       images = [],
-      videoFile = null,
       videoUrl = "",
       urlOnly = false,
       files,
@@ -362,7 +358,7 @@ export function createAnalysisService(config, jobs) {
       if (!job) {
         throw new ApiError(503, "ANALYSIS_FAILED", "현재 분석 요청이 많아 잠시 후 다시 시도해 주세요.");
       }
-      const legacyFiles = images.length > 0 || videoFile ? images : (files ?? []);
+      const legacyFiles = images.length > 0 ? images : (files ?? []);
       const entry = {
         job,
         inputType,
@@ -373,9 +369,8 @@ export function createAnalysisService(config, jobs) {
         input: {
           copy,
           images: legacyFiles,
-          videoFile,
           videoUrl,
-          urlOnly: urlOnly || (Boolean(url) && !copy && !videoUrl && !videoFile && legacyFiles.length === 0),
+          urlOnly: urlOnly || (Boolean(url) && !copy && !videoUrl && legacyFiles.length === 0),
         },
       };
       entry.timer = setTimeout(() => expireQueue(entry), queueWaitMs(config));

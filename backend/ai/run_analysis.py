@@ -32,10 +32,15 @@ def analyze_request(data):
     if not all(isinstance(path, str) for path in image_paths):
         raise ValueError("이미지 경로는 문자열이어야 합니다.")
 
+    if data.get("videoPath"):
+        raise ValueError(
+            "영상 파일 업로드는 지원하지 않습니다. "
+            "광고 문구를 직접 입력하거나 이용 권한이 있는 스크린샷을 올려 주세요."
+        )
+
     return analyze_ad(
         copy=copy,
         image_paths=image_paths,
-        video_path=optional_text(data, "videoPath"),
         video_url=optional_text(data, "videoUrl"),
     )
 

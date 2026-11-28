@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-export function createJobStore({ jobTtlMs, maxJobs }) {
+export function createJobStore({ jobTtlMs, maxJobs, now = Date.now }) {
   const jobs = new Map();
-  const timer = setInterval(() => sweep(Date.now()), Math.min(jobTtlMs, 60_000));
+  const clock = typeof now === "function" ? now : () => now;
+  const timer = setInterval(() => sweep(clock()), Math.min(jobTtlMs, 60_000));
   timer.unref();
 
   function oldestFinished() {
@@ -11,10 +12,11 @@ export function createJobStore({ jobTtlMs, maxJobs }) {
       .sort((a, b) => a.updatedAt - b.updatedAt)[0] ?? null;
   }
 
-  function sweep(now) {
+  function sweep(at) {
     for (const [id, job] of jobs) {
+      // 실행 대기 작업도 status가 processing이다. 완료 시각(updatedAt) 이전에는 지우지 않는다.
       if (job.status === "processing") continue;
-      if (now - job.updatedAt >= jobTtlMs) jobs.delete(id);
+      if (at - job.updatedAt >= jobTtlMs) jobs.delete(id);
     }
     while (jobs.size > maxJobs) {
       const removable = oldestFinished();
@@ -25,13 +27,14 @@ export function createJobStore({ jobTtlMs, maxJobs }) {
 
   return {
     create(step = "confirm", meta = {}) {
-      sweep(Date.now());
+      const timestamp = clock();
+      sweep(timestamp);
       while (jobs.size >= maxJobs) {
         const removable = oldestFinished();
         if (!removable) return null;
         jobs.delete(removable.analysisId);
       }
-      const now = Date.now();
+      const now = timestamp;
       const job = {
         analysisId: randomUUID(),
         status: "processing",
@@ -65,12 +68,13 @@ export function createJobStore({ jobTtlMs, maxJobs }) {
       return null;
     },
     get(id) {
+      sweep(clock());
       return jobs.get(id) ?? null;
     },
     update(id, patch) {
       const job = jobs.get(id);
       if (!job) return null;
-      Object.assign(job, patch, { updatedAt: Date.now() });
+      Object.assign(job, patch, { updatedAt: clock() });
       return job;
     },
     toPublic(job) {
