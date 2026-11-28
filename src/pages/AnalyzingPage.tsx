@@ -8,7 +8,7 @@ import { Analyzing } from "../components/Analyzing";
 import { ErrorState } from "../components/ErrorState";
 
 // 이 시간 안에 결과가 안 오면 시간 초과로 처리
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 180_000;
 
 export function AnalyzingPage() {
   const navigate = useNavigate();
