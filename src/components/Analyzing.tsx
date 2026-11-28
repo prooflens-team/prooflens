@@ -2,7 +2,12 @@ import { ANALYSIS_STEPS } from "../analysis/demo";
 
 type StepState = "done" | "active" | "pending";
 
-export function Analyzing({ activeIndex }: { activeIndex: number }) {
+type AnalyzingProps = {
+  activeIndex: number;
+  isVideo?: boolean;
+};
+
+export function Analyzing({ activeIndex, isVideo = false }: AnalyzingProps) {
   const current = ANALYSIS_STEPS[activeIndex] ?? ANALYSIS_STEPS[0];
 
   return (
@@ -10,6 +15,11 @@ export function Analyzing({ activeIndex }: { activeIndex: number }) {
       <p className="analyzing-badge">분석 진행 중</p>
       <h1 id="analyzing-title">광고를 분석하고 있어요</h1>
       <p className="analyzing-lead">{current.active.text}</p>
+      <p className="analyzing-note">
+        {isVideo
+          ? "영상 분석은 길면 4분 정도 걸릴 수 있어요. 화면을 닫지 말고 기다려 주세요."
+          : "AI 분석은 길면 3분 정도 걸릴 수 있어요. 화면을 닫지 말고 기다려 주세요."}
+      </p>
 
       <ol className="tracker" aria-label="분석 단계">
         {ANALYSIS_STEPS.map((step, index) => {
