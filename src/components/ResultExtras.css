@@ -1,0 +1,192 @@
+/* 5번: 결과 화면 추가 정보 / 6번: 광고 표기 확인 배너 */
+
+/* 광고에 표기된 시험 정보 */
+.test-conditions {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(6, 127, 126, 0.15);
+}
+
+.test-conditions-label {
+  margin: 0;
+  color: var(--teal-dark);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.test-conditions ul {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.test-conditions li {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.ad-summary .test-conditions dl {
+  margin: 0;
+  gap: 4px;
+  font-size: 13.5px;
+}
+
+/* 주장별 조건 */
+.claim-conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.claim-conditions li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f3f6f8;
+  color: var(--muted-strong);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+/* 영상 재생 위치 */
+.claim-card .claim-timestamps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.claim-timestamps span {
+  color: var(--muted-strong);
+  font-weight: 650;
+}
+
+.claim-timestamps em {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--teal-soft);
+  color: var(--teal-dark);
+  font-style: normal;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 광고 표기 확인 배너 */
+.consistency {
+  width: min(820px, 100%);
+  margin-top: 24px;
+  padding: 20px 24px;
+  background: #fffaf3;
+  border: 1px solid #f6e3c9;
+  border-radius: 18px;
+  text-align: left;
+}
+
+.consistency h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.consistency-lead {
+  margin: 6px 0 0;
+  color: var(--muted-strong);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.consistency ul {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.consistency-item {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #fff;
+  border-left: 4px solid #d4842d;
+}
+
+.consistency-item.is-info {
+  border-left-color: var(--teal);
+}
+
+.consistency-item.is-muted {
+  border-left-color: #b7c3d0;
+}
+
+.consistency-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.consistency-top strong {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.consistency-badge {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fff1e3;
+  color: #d4842d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.is-info .consistency-badge {
+  background: var(--teal-soft);
+  color: var(--teal-dark);
+}
+
+.is-muted .consistency-badge {
+  background: #f1f3f6;
+  color: #7d8b9d;
+}
+
+.consistency-item p {
+  margin: 8px 0 0;
+  color: var(--muted-strong);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.consistency-original code {
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #f3f6f8;
+  color: var(--ink);
+  font-family: inherit;
+  font-weight: 650;
+}
+
+.consistency-item .consistency-tip {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .consistency {
+    padding: 18px 16px;
+  }
+
+  .consistency-top {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
