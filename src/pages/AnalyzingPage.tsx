@@ -37,10 +37,10 @@ export function AnalyzingPage() {
       settled = true;
       controller.abort();
       if (code === "INVALID_INPUT") {
-        navigate(
-          { pathname: "/", hash: "#analyze" },
-          { replace: true, state: { inputError: ERROR_COPY.INVALID_INPUT.text } },
-        );
+        navigate("/", {
+          replace: true,
+          state: { inputError: ERROR_COPY.INVALID_INPUT.text },
+        });
         return;
       }
       setError({ code, retryAfter });

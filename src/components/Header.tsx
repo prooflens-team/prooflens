@@ -84,7 +84,7 @@ function scrollToHash(hash: string) {
 
   document.querySelector(hash)?.scrollIntoView({
     behavior: "smooth",
-    block: hash === "#analyze" ? "center" : "start",
+    block: "start",
   });
 
   if (hash === "#analyze") {
